@@ -1,0 +1,5 @@
+{
+  "name": "Albrook Pool Manager",
+  "description": "Sistema de gestión de reservas, control de aforo y reportes para la Piscina de Albrook.",
+  "requestFramePermissions": []
+}
