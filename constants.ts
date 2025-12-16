@@ -21,12 +21,14 @@ export const EXTERNAL_DB_CONFIG = {
     LOGS_TABLE: 'access_logs',
     // Nombre de la tabla para notificaciones
     NOTIFICATIONS_TABLE: 'notifications',
+    // Nombre de la tabla para sugerencias
+    SUGGESTIONS_TABLE: 'suggestions',
     PHONE_COLUMN: 'phone'
 };
 
 export const DEMO_USERS = [
   { id: 'u1', username: 'admin', name: 'Administrador Albrook', role: UserRole.ADMIN, password: '123', email: 'admin@albrook.com', phone: '6000-0001' },
-  { id: 'u2', username: 'club_delfines', name: 'Club Delfines', role: UserRole.CLUB, password: '123', email: 'contacto@delfines.com', phone: '6000-0002' },
-  { id: 'u3', username: 'colegio_javier', name: 'Colegio Javier', role: UserRole.SCHOOL, password: '123', email: 'deportes@javier.edu', phone: '6000-0003' },
-  { id: 'u4', username: 'juan_perez', name: 'Juan Pérez', role: UserRole.INDIVIDUAL, password: '123', email: 'juan.perez@email.com', phone: '6000-0004' },
+  { id: 'u2', username: 'familia_perez', name: 'Sr. Roberto Pérez (Titular)', role: UserRole.PRINCIPAL, password: '123', email: 'roberto@email.com', phone: '6000-0002' },
+  { id: 'u3', username: 'hijo_perez', name: 'Carlitos Pérez (Hijo)', role: UserRole.DEPENDENT, password: '123', email: 'carlitos@email.com', phone: '6000-0003' },
+  { id: 'u4', username: 'juan_individual', name: 'Juan Individual', role: UserRole.INDIVIDUAL, password: '123', email: 'juan.perez@email.com', phone: '6000-0004' },
 ];

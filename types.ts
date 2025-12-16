@@ -1,8 +1,9 @@
+
 export enum UserRole {
   ADMIN = 'ADMIN',
-  CLUB = 'CLUB',      // Clubes que imparten clases
-  SCHOOL = 'SCHOOL',  // Colegios
-  INDIVIDUAL = 'INDIVIDUAL' // Usuarios privados
+  PRINCIPAL = 'PRINCIPAL', // Responsable / Titular de cuenta
+  DEPENDENT = 'DEPENDENT', // Dependiente (Hijo/Familiar)
+  INDIVIDUAL = 'INDIVIDUAL' // Usuarios privados independientes
 }
 
 export interface User {
@@ -14,6 +15,8 @@ export interface User {
   email?: string;
   phone?: string;
   status?: string; // Added to match DB 'status' column
+  photoUrl?: string; // URL de foto de perfil (Google/Facebook)
+  lastPaymentDate?: string; // YYYY-MM-DD Fecha del último pago registrado
 }
 
 export interface Booking {
@@ -32,6 +35,16 @@ export interface AccessLog {
   bookingId: string;
   checkInTime: string | null; // ISO Timestamp
   checkOutTime: string | null; // ISO Timestamp
+  laps?: number; // Cantidad de piscinas nadadas en la sesión
+}
+
+export interface Suggestion {
+  id: string;
+  userId: string;
+  userName: string;
+  date: string; // ISO Timestamp
+  message: string;
+  isRead: boolean;
 }
 
 export interface DailyStats {

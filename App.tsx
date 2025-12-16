@@ -1,5 +1,7 @@
+
 import React, { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
+import { Sidebar } from './components/Sidebar';
 import { BookingCalendar } from './components/BookingCalendar';
 import { CheckInOut } from './components/CheckInOut';
 import { Reports } from './components/Reports';
@@ -8,6 +10,8 @@ import { SubscriptionStatus } from './components/SubscriptionStatus';
 import { AdminBookings } from './components/AdminBookings';
 import { SystemLogs } from './components/SystemLogs';
 import { NotificationCenter } from './components/NotificationCenter';
+import { SuggestionBox } from './components/SuggestionBox';
+import { SwimmerRanking } from './components/SwimmerRanking';
 import { Login } from './components/Login';
 import { getCurrentUser } from './services/storageService';
 import { User, UserRole } from './types';
@@ -37,6 +41,8 @@ const App: React.FC = () => {
     return <Login onLogin={handleLogin} />;
   }
 
+  const isAdmin = user.role === UserRole.ADMIN;
+
   const renderContent = () => {
     switch (currentPage) {
       case 'dashboard':
@@ -63,35 +69,56 @@ const App: React.FC = () => {
             </div>
         );
       case 'checkin':
-        // Passed user prop so component knows who to filter for
         return <CheckInOut user={user} />;
+      case 'ranking':
+        return <SwimmerRanking user={user} />;
       case 'admin_bookings':
-        return user.role === UserRole.ADMIN ? <AdminBookings /> : <div>Acceso Denegado</div>;
+        return isAdmin ? <AdminBookings /> : <div>Acceso Denegado</div>;
       case 'system_logs':
-        return user.role === UserRole.ADMIN ? <SystemLogs /> : <div>Acceso Denegado</div>;
+        return isAdmin ? <SystemLogs /> : <div>Acceso Denegado</div>;
       case 'communications':
-        return user.role === UserRole.ADMIN ? <NotificationCenter /> : <div>Acceso Denegado</div>;
+        return isAdmin ? <NotificationCenter /> : <div>Acceso Denegado</div>;
+      case 'suggestions':
+        return <SuggestionBox user={user} />;
       case 'reports':
-        return user.role === UserRole.ADMIN ? <Reports /> : <div>Acceso Denegado</div>;
+        return isAdmin ? <Reports /> : <div>Acceso Denegado</div>;
       case 'users':
-        return user.role === UserRole.ADMIN ? <UserManagement /> : <div>Acceso Denegado</div>;
+        return isAdmin ? <UserManagement /> : <div>Acceso Denegado</div>;
       default:
         return <div>Página no encontrada</div>;
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 font-sans">
-      <Navbar 
-        user={user} 
-        onNavigate={setCurrentPage} 
-        onLogout={handleLogout} 
-        currentPage={currentPage}
-      />
+    <div className="min-h-screen bg-slate-100 font-sans flex flex-col h-screen overflow-hidden">
+      {/* Top Navbar: Header, User Profile, Notifications */}
+      <div className="flex-shrink-0 z-20">
+        <Navbar 
+            user={user} 
+            onNavigate={setCurrentPage} 
+            onLogout={handleLogout} 
+            currentPage={currentPage}
+        />
+      </div>
       
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {renderContent()}
-      </main>
+      {/* Main Layout Area */}
+      <div className="flex flex-1 overflow-hidden">
+        
+        {/* Sidebar only for Admin */}
+        {isAdmin && (
+            <Sidebar 
+                onNavigate={setCurrentPage} 
+                currentPage={currentPage} 
+            />
+        )}
+
+        {/* Scrollable Main Content */}
+        <main className="flex-1 overflow-y-auto bg-slate-100 relative">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                {renderContent()}
+            </div>
+        </main>
+      </div>
     </div>
   );
 };
