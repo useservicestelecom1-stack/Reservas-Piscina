@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { getLogs, getBookings } from '../services/storageService';
 import { AccessLog, Booking } from '../types';
@@ -13,6 +14,8 @@ interface EnrichedLog {
   checkIn: string | null;
   checkOut: string | null;
   durationMinutes: number | null;
+  laps: number;
+  meters: number;
 }
 
 export const SystemLogs: React.FC = () => {
@@ -54,7 +57,9 @@ export const SystemLogs: React.FC = () => {
           bookingHour: booking?.hour ?? -1,
           checkIn: log.checkInTime,
           checkOut: log.checkOutTime,
-          durationMinutes: duration
+          durationMinutes: duration,
+          laps: log.laps || 0,
+          meters: (log.laps || 0) * 50 // 50m pool
         };
       });
 
@@ -86,9 +91,9 @@ export const SystemLogs: React.FC = () => {
   );
 
   const downloadCSV = () => {
-    const headers = ['Usuario,Rol,Fecha Reserva,Hora Reserva,Check In,Check Out,Duracion (min)'];
+    const headers = ['Usuario,Rol,Fecha Reserva,Hora Reserva,Check In,Check Out,Duracion (min),Piscinas,Metros'];
     const rows = filteredLogs.map(l => 
-      `"${l.userName}","${l.userRole}","${l.bookingDate}","${l.bookingHour}:00","${l.checkIn || ''}","${l.checkOut || ''}","${l.durationMinutes || ''}"`
+      `"${l.userName}","${l.userRole}","${l.bookingDate}","${l.bookingHour}:00","${l.checkIn || ''}","${l.checkOut || ''}","${l.durationMinutes || ''}","${l.laps}","${l.meters}"`
     );
     const csvContent = "data:text/csv;charset=utf-8," + [headers, ...rows].join("\n");
     const encodedUri = encodeURI(csvContent);
@@ -105,7 +110,7 @@ export const SystemLogs: React.FC = () => {
       <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
         <div>
            <h2 className="text-2xl font-bold text-gray-800">🗄️ Bitácora de Accesos</h2>
-           <p className="text-sm text-gray-500">Historial completo de entradas y salidas registradas en el sistema.</p>
+           <p className="text-sm text-gray-500">Historial completo de entradas, salidas y rendimiento deportivo.</p>
         </div>
         <div className="flex gap-2 w-full md:w-auto">
            <input 
@@ -125,8 +130,8 @@ export const SystemLogs: React.FC = () => {
             <tr>
               <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Usuario / Rol</th>
               <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Reserva</th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Entrada (Check-In)</th>
-              <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Salida (Check-Out)</th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Check-In / Out</th>
+              <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Actividad (50m)</th>
               <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Duración</th>
             </tr>
           </thead>
@@ -147,23 +152,37 @@ export const SystemLogs: React.FC = () => {
                              <div className="text-xs text-gray-500">Horario: {log.bookingHour}:00</div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
-                            <span className="text-sm font-mono text-green-700 bg-green-50 px-2 py-1 rounded">
-                                {formatDateTime(log.checkIn)}
-                            </span>
+                            <div className="flex flex-col gap-1">
+                                <span className="text-xs font-mono text-green-700 bg-green-50 px-2 py-0.5 rounded w-fit">
+                                    IN: {log.checkIn ? new Date(log.checkIn).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '-'}
+                                </span>
+                                {log.checkOut ? (
+                                    <span className="text-xs font-mono text-red-700 bg-red-50 px-2 py-0.5 rounded w-fit">
+                                        OUT: {new Date(log.checkOut).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
+                                    </span>
+                                ) : (
+                                    <span className="text-[10px] text-yellow-600 font-bold uppercase tracking-wider pl-1">
+                                        En curso...
+                                    </span>
+                                )}
+                            </div>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
-                            {log.checkOut ? (
-                                <span className="text-sm font-mono text-red-700 bg-red-50 px-2 py-1 rounded">
-                                    {formatDateTime(log.checkOut)}
-                                </span>
+                            {log.laps > 0 ? (
+                                <div>
+                                    <span className="text-sm font-bold text-blue-700">{log.laps} piscinas</span>
+                                    <div className="text-xs text-gray-400 font-mono">{log.meters}m</div>
+                                </div>
                             ) : (
-                                <span className="text-xs text-yellow-600 font-bold bg-yellow-50 px-2 py-1 rounded-full animate-pulse">
-                                    EN CURSO
-                                </span>
+                                <span className="text-xs text-gray-300">-</span>
                             )}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                            {log.durationMinutes !== null ? `${log.durationMinutes} min` : '-'}
+                            {log.durationMinutes !== null ? (
+                                <span className="font-mono bg-gray-100 px-2 py-1 rounded text-gray-700">
+                                    {log.durationMinutes} min
+                                </span>
+                            ) : '-'}
                         </td>
                     </tr>
                 ))

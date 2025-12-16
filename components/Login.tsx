@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { loginUser, registerUser } from '../services/storageService';
-import { User, UserRole } from '../types';
-import { DEMO_USERS } from '../constants';
+import React, { useState, useEffect } from 'react';
+import { loginUser, syncSocialUser } from '../services/storageService';
+import { supabase } from '../services/supabaseClient';
+import { User } from '../types';
 import { Button } from './Button';
 
 interface LoginProps {
@@ -13,6 +13,41 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // Check for existing OAuth session on mount
+  useEffect(() => {
+    const checkSession = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session && session.user) {
+            setLoading(true);
+            try {
+                // Sync the Auth user to our database 'members' table
+                const appUser = await syncSocialUser(session.user);
+                onLogin(appUser);
+            } catch (err: any) {
+                console.error("Sync error", err);
+                setError("Error sincronizando cuenta social.");
+                setLoading(false);
+            }
+        }
+    };
+    checkSession();
+
+    // Listen for auth changes (e.g. after redirect)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (session && session.user) {
+             // We do the same sync logic here
+             try {
+                const appUser = await syncSocialUser(session.user);
+                onLogin(appUser);
+            } catch (err) {
+                console.error("Auth state change error", err);
+            }
+        }
+    });
+
+    return () => subscription.unsubscribe();
+  }, [onLogin]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -21,39 +56,24 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     if (user) {
       onLogin(user);
     } else {
-      setError('Usuario no encontrado. Prueba: admin, club_delfines, colegio_javier, juan_perez');
+      setError('Usuario no encontrado.');
     }
   };
 
-  const handleSocialLogin = async (provider: 'Google' | 'Facebook') => {
-    const name = window.prompt(`Simulación ${provider}: Por favor ingresa tu nombre para completar el registro:`, "Nuevo Usuario");
-    
-    if (name) {
-        const timestamp = Date.now();
-        const mockUsername = `${provider.toLowerCase()}_${timestamp}`;
-        
-        const newUser: User = {
-            id: `u_${timestamp}`,
-            username: mockUsername,
-            name: name,
-            role: UserRole.INDIVIDUAL, 
-            password: 'social_login_dummy_pass',
-            email: `usuario_${timestamp}@${provider.toLowerCase()}.com`, 
-            phone: ''
-        };
-
-        try {
-            setLoading(true);
-            await registerUser(newUser);
-            const loggedInUser = await loginUser(mockUsername);
-            if (loggedInUser) {
-                onLogin(loggedInUser);
+  const handleSocialLogin = async (provider: 'google' | 'facebook') => {
+    setLoading(true);
+    try {
+        const { error } = await supabase.auth.signInWithOAuth({
+            provider: provider,
+            options: {
+                redirectTo: window.location.origin
             }
-            setLoading(false);
-        } catch (e) {
-            setLoading(false);
-            setError("Error al registrar usuario.");
-        }
+        });
+        if (error) throw error;
+        // User will be redirected, so loading state stays true until page reload/redirect
+    } catch (err: any) {
+        setLoading(false);
+        setError(`Error iniciando sesión con ${provider}: ${err.message}`);
     }
   };
 
@@ -116,32 +136,26 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
             <div className="mt-6 grid grid-cols-2 gap-3">
                 <button
-                    onClick={() => handleSocialLogin('Facebook')}
+                    onClick={() => handleSocialLogin('facebook')}
                     disabled={loading}
                     className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
                 >
-                    <span className="sr-only">Ingresar con Facebook</span>
-                    <span className="ml-2">Facebook</span>
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/5/51/Facebook_f_logo_%282019%29.svg" alt="FB" className="h-5 w-5 mr-2" />
+                    <span>Facebook</span>
                 </button>
 
                 <button
-                    onClick={() => handleSocialLogin('Google')}
+                    onClick={() => handleSocialLogin('google')}
                     disabled={loading}
                     className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
                 >
-                    <span className="sr-only">Ingresar con Google</span>
-                    <span className="ml-2">Google</span>
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" className="h-5 w-5 mr-2" />
+                    <span>Google</span>
                 </button>
             </div>
-        </div>
-
-        <div className="mt-4 text-xs text-gray-500 bg-gray-100 p-4 rounded">
-            <p className="font-bold mb-1">Usuarios Demo (Admin / Club / School):</p>
-            <ul className="list-disc pl-4 space-y-1">
-                {DEMO_USERS.filter(u => u.role !== UserRole.INDIVIDUAL).map(u => (
-                    <li key={u.id}><b>{u.username}</b> ({u.role})</li>
-                ))}
-            </ul>
+            <p className="text-[10px] text-center text-gray-400 mt-2">
+                Nota: Requiere configuración de Providers en Supabase Dashboard.
+            </p>
         </div>
       </div>
     </div>

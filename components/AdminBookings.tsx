@@ -39,7 +39,6 @@ export const AdminBookings: React.FC = () => {
       if (newStatus === 'CANCELLED' && booking) {
           try {
               // We need to fetch the full user object to get the phone number
-              // Optimally this should be an API call by ID, but we use getAllUsers here for the demo
               const allUsers = await getAllUsers();
               const user = allUsers.find(u => u.id === booking.userId);
               
@@ -65,7 +64,14 @@ export const AdminBookings: React.FC = () => {
 
   const filteredBookings = bookings.filter(b => {
       if (filterDate && b.date !== filterDate) return false;
-      if (filterRole !== 'ALL' && b.userRole !== filterRole) return false;
+      
+      if (filterRole !== 'ALL') {
+          // Robust comparison: handle nulls/undefined and case sensitivity
+          const currentRole = String(b.userRole || '').trim().toUpperCase();
+          const targetRole = String(filterRole).trim().toUpperCase();
+          if (currentRole !== targetRole) return false;
+      }
+      
       if (filterStatus !== 'ALL' && b.status !== filterStatus) return false;
       return true;
   });
@@ -94,8 +100,9 @@ export const AdminBookings: React.FC = () => {
               >
                   <option value="ALL">Todos los Roles</option>
                   <option value={UserRole.INDIVIDUAL}>Individuales</option>
-                  <option value={UserRole.CLUB}>Clubes</option>
-                  <option value={UserRole.SCHOOL}>Colegios</option>
+                  <option value={UserRole.PRINCIPAL}>Principales (Titulares)</option>
+                  <option value={UserRole.DEPENDENT}>Dependientes</option>
+                  <option value={UserRole.ADMIN}>Administradores</option>
               </select>
           </div>
           <div>

@@ -45,7 +45,7 @@ export const UserManagement: React.FC = () => {
     setFormData({
         name: user.name,
         username: user.username,
-        password: '', // Leave blank to indicate "keep current"
+        password: '', // Reset password field for security/fresh entry
         email: user.email || '',
         phone: user.phone || '',
         role: user.role,
@@ -55,6 +55,7 @@ export const UserManagement: React.FC = () => {
     setIsEditing(true);
     setError(null);
     setSuccess(null);
+    // Scroll to top to see the form
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -104,7 +105,7 @@ export const UserManagement: React.FC = () => {
               id: editingId,
               name: formData.name,
               username: formData.username,
-              password: formData.password, // If empty, storageService ignores it
+              password: formData.password, // If empty string, storageService ignores it
               email: formData.email,
               phone: formData.phone,
               role: formData.role as UserRole,
@@ -112,7 +113,7 @@ export const UserManagement: React.FC = () => {
           };
           await updateUser(updatedUser);
           setSuccess(`Usuario "${updatedUser.username}" actualizado exitosamente.`);
-          handleCancelEdit(); // Reset form but keep success message
+          handleCancelEdit(); // Exit edit mode
       } else {
           // Create new user
           const newUser: User = {
@@ -154,13 +155,13 @@ export const UserManagement: React.FC = () => {
         </div>
         
         <p className="text-sm text-gray-500 mb-4">
-          {isEditing ? 'Modifique los datos necesarios.' : 'Ingrese los datos para registrar un nuevo cliente.'} Campos marcados con * son obligatorios.
+          {isEditing ? 'Modifique los datos necesarios. Deje la contraseña en blanco para no cambiarla.' : 'Ingrese los datos para registrar un nuevo cliente.'}
         </p>
 
-        <form onSubmit={handleSubmit} className="space-y-4 max-w-4xl">
+        <form onSubmit={handleSubmit} className="space-y-4 max-w-4xl" autoComplete="off">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Nombre Completo (Full Name) *</label>
+                <label className="block text-sm font-medium text-gray-700">Nombre Completo *</label>
                 <input
                   type="text"
                   name="name"
@@ -168,6 +169,7 @@ export const UserManagement: React.FC = () => {
                   onChange={handleChange}
                   className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
                   placeholder="Ej. Juan Pérez"
+                  autoComplete="off"
                 />
               </div>
 
@@ -179,10 +181,10 @@ export const UserManagement: React.FC = () => {
                   onChange={handleChange}
                   className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
                 >
-                  <option value={UserRole.INDIVIDUAL}>INDIVIDUAL (Privado)</option>
-                  <option value={UserRole.CLUB}>CLUB (Entrenador)</option>
-                  <option value={UserRole.SCHOOL}>SCHOOL (Colegio)</option>
-                  <option value={UserRole.ADMIN}>ADMIN (Admin)</option>
+                  <option value={UserRole.INDIVIDUAL}>INDIVIDUAL (Usuario Único)</option>
+                  <option value={UserRole.PRINCIPAL}>PRINCIPAL (Responsable/Titular)</option>
+                  <option value={UserRole.DEPENDENT}>DEPENDENT (Dependiente)</option>
+                  <option value={UserRole.ADMIN}>ADMIN (Administrador)</option>
                 </select>
               </div>
           </div>
@@ -197,6 +199,7 @@ export const UserManagement: React.FC = () => {
                  onChange={handleChange}
                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
                  placeholder="cliente@ejemplo.com"
+                 autoComplete="off"
                />
              </div>
              <div>
@@ -208,10 +211,11 @@ export const UserManagement: React.FC = () => {
                  onChange={handleChange}
                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
                  placeholder="Ej. 6600-1234"
+                 autoComplete="off"
                />
              </div>
              <div>
-               <label className="block text-sm font-medium text-gray-700">Estado (Status)</label>
+               <label className="block text-sm font-medium text-gray-700">Estado</label>
                <select
                   name="status"
                   value={formData.status}
@@ -225,7 +229,7 @@ export const UserManagement: React.FC = () => {
                 </select>
              </div>
           </div>
-
+          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700">Nombre de Usuario (Login) *</label>
@@ -235,25 +239,34 @@ export const UserManagement: React.FC = () => {
                 value={formData.username}
                 onChange={handleChange}
                 disabled={isEditing} 
-                className={`mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 ${isEditing ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                className={`mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 ${isEditing ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
                 placeholder="Ej. jperez"
+                title={isEditing ? "El nombre de usuario no se puede cambiar una vez creado." : ""}
+                autoComplete="off"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Contraseña {isEditing ? '(Opcional)' : '*'}</label>
+              <label className="block text-sm font-medium text-gray-700" htmlFor="passwordField">
+                  Contraseña {isEditing ? '(Opcional)' : '*'}
+              </label>
               <input
-                type="text"
+                id="passwordField"
+                type="text" 
                 name="password"
                 value={formData.password}
                 onChange={handleChange}
-                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500"
-                placeholder={isEditing ? "Dejar en blanco para mantener actual" : "Contraseña"}
+                className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                placeholder={isEditing ? "Escriba para cambiar contraseña" : "Contraseña"}
+                autoComplete="new-password"
               />
+              {isEditing && (
+                  <p className="text-xs text-gray-400 mt-1">Si deja este campo vacío, se mantendrá la contraseña actual.</p>
+              )}
             </div>
           </div>
 
-          {error && <div className="text-red-600 text-sm bg-red-50 p-2 rounded">{error}</div>}
-          {success && <div className="text-green-600 text-sm bg-green-50 p-2 rounded">{success}</div>}
+          {error && <div className="text-red-600 text-sm bg-red-50 p-2 rounded border border-red-200">{error}</div>}
+          {success && <div className="text-green-600 text-sm bg-green-50 p-2 rounded border border-green-200">{success}</div>}
 
           <div className="pt-2 flex justify-end gap-3">
              {isEditing && (
@@ -284,7 +297,7 @@ export const UserManagement: React.FC = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {users.map((u) => (
-                <tr key={u.id} className={editingId === u.id ? 'bg-blue-50' : ''}>
+                <tr key={u.id} className={editingId === u.id ? 'bg-blue-50' : 'hover:bg-gray-50'}>
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                      <div className="font-medium">{u.name}</div>
                      <div className="text-xs text-gray-500">{u.email}</div>
@@ -296,32 +309,38 @@ export const UserManagement: React.FC = () => {
                   <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
                       ${u.role === UserRole.ADMIN ? 'bg-purple-100 text-purple-800' : 
-                        u.role === UserRole.CLUB ? 'bg-blue-100 text-blue-800' :
-                        u.role === UserRole.SCHOOL ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-800'}`}>
-                      {u.role}
+                        u.role === UserRole.PRINCIPAL ? 'bg-indigo-100 text-indigo-800' :
+                        u.role === UserRole.DEPENDENT ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-800'}`}>
+                      {u.role === UserRole.PRINCIPAL ? 'PRINCIPAL' : 
+                       u.role === UserRole.DEPENDENT ? 'DEPENDIENTE' : u.role}
                     </span>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-sm">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full
-                        ${u.status === 'ACTIVO' ? 'bg-green-100 text-green-800' : 
-                          u.status === 'MOROSO' ? 'bg-red-100 text-red-800' : 
-                          'bg-yellow-100 text-yellow-800'}`}>
-                          {u.status}
-                      </span>
+                      <div className="flex flex-col gap-1">
+                          <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full w-fit
+                            ${u.status === 'ACTIVO' ? 'bg-green-100 text-green-800' : 
+                              u.status === 'MOROSO' ? 'bg-red-100 text-red-800' : 
+                              'bg-yellow-100 text-yellow-800'}`}>
+                              {u.status}
+                          </span>
+                          {u.lastPaymentDate && (
+                              <span className="text-[10px] text-gray-400">Pago: {u.lastPaymentDate}</span>
+                          )}
+                      </div>
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex justify-end gap-2">
                         <button 
                             onClick={() => handleEdit(u)}
-                            className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 p-1.5 rounded hover:bg-indigo-100"
-                            title="Editar"
+                            className="text-indigo-600 hover:text-indigo-900 bg-indigo-50 p-1.5 rounded hover:bg-indigo-100 border border-indigo-200"
+                            title="Editar Usuario"
                         >
                             ✏️
                         </button>
                         <button 
                             onClick={() => handleDelete(u.id)}
-                            className="text-red-600 hover:text-red-900 bg-red-50 p-1.5 rounded hover:bg-red-100"
-                            title="Eliminar"
+                            className="text-red-600 hover:text-red-900 bg-red-50 p-1.5 rounded hover:bg-red-100 border border-red-200"
+                            title="Eliminar Usuario"
                         >
                             🗑️
                         </button>

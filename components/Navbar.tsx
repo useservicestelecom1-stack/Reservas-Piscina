@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User, UserRole, AppNotification } from '../types';
 import { logoutUser, getNotifications, markNotificationAsRead } from '../services/storageService';
@@ -16,6 +17,9 @@ export const Navbar: React.FC<NavbarProps> = ({ user, onNavigate, onLogout, curr
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+  
+  // Mobile Menu State
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // Track the last notified ID to avoid spamming the same alert
   const lastNotifiedIdRef = useRef<string | null>(null);
@@ -80,8 +84,16 @@ export const Navbar: React.FC<NavbarProps> = ({ user, onNavigate, onLogout, curr
       setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
   };
   
+  const handleMobileNavigate = (page: string) => {
+      onNavigate(page);
+      setIsMobileMenuOpen(false); // Close menu after click
+  };
+
   const navItemClass = (page: string) => 
     `cursor-pointer px-3 py-2 rounded-md text-sm font-medium ${currentPage === page ? 'bg-blue-800 text-white' : 'text-blue-100 hover:bg-blue-600'}`;
+
+  const mobileNavItemClass = (page: string) =>
+    `block px-3 py-2 rounded-md text-base font-medium ${currentPage === page ? 'bg-blue-900 text-white' : 'text-blue-100 hover:bg-blue-600 hover:text-white'}`;
 
   // Format date: "Mie, 23 Oct"
   const dateStr = currentTime.toLocaleDateString('es-PA', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -90,9 +102,11 @@ export const Navbar: React.FC<NavbarProps> = ({ user, onNavigate, onLogout, curr
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
 
+  const isAdmin = user.role === UserRole.ADMIN;
+
   return (
     <nav className="bg-blue-700 shadow-lg relative z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <div className="flex-shrink-0 flex items-center gap-2">
@@ -103,24 +117,18 @@ export const Navbar: React.FC<NavbarProps> = ({ user, onNavigate, onLogout, curr
                 <span className="md:hidden text-blue-200 text-xs font-mono">{timeStr}</span>
               </div>
             </div>
-            <div className="hidden md:block">
-              <div className="ml-10 flex items-baseline space-x-4">
-                <a onClick={() => onNavigate('dashboard')} className={navItemClass('dashboard')}>Reservas</a>
-                
-                {/* Everyone can now see Check-in */}
-                <a onClick={() => onNavigate('checkin')} className={navItemClass('checkin')}>Control Acceso</a>
-                
-                {user.role === UserRole.ADMIN && (
-                   <>
-                       <a onClick={() => onNavigate('admin_bookings')} className={navItemClass('admin_bookings')}>Gestión</a>
-                       <a onClick={() => onNavigate('system_logs')} className={navItemClass('system_logs')}>Bitácora</a>
-                       <a onClick={() => onNavigate('communications')} className={navItemClass('communications')}>Mensajería</a>
-                       <a onClick={() => onNavigate('reports')} className={navItemClass('reports')}>Reportes IA</a>
-                       <a onClick={() => onNavigate('users')} className={navItemClass('users')}>Usuarios</a>
-                   </>
-                )}
+            
+            {/* Desktop Menu - ONLY for Non-Admins (Admins use Sidebar) */}
+            {!isAdmin && (
+              <div className="hidden md:block">
+                <div className="ml-10 flex items-baseline space-x-4">
+                  <a onClick={() => onNavigate('dashboard')} className={navItemClass('dashboard')}>Reservas</a>
+                  <a onClick={() => onNavigate('checkin')} className={navItemClass('checkin')}>Control Acceso</a>
+                  <a onClick={() => onNavigate('ranking')} className={navItemClass('ranking')}>🏆 Ranking</a>
+                  <a onClick={() => onNavigate('suggestions')} className={navItemClass('suggestions')}>Sugerencias</a>
+                </div>
               </div>
-            </div>
+            )}
           </div>
           
           <div className="flex items-center gap-4">
@@ -190,22 +198,117 @@ export const Navbar: React.FC<NavbarProps> = ({ user, onNavigate, onLogout, curr
                 )}
             </div>
 
-            <div className="text-white text-sm text-right hidden sm:block">
-                <div className="font-bold">{user.name}</div>
-                <div className="text-xs opacity-80 uppercase tracking-wider">{user.role}</div>
+            <div className="flex items-center gap-3">
+                <div className="text-white text-sm text-right hidden sm:block">
+                    <div className="font-bold">{user.name}</div>
+                    <div className="text-xs opacity-80 uppercase tracking-wider">{user.role}</div>
+                </div>
+                
+                {/* Avatar / Profile Pic */}
+                {user.photoUrl ? (
+                    <img 
+                        src={user.photoUrl} 
+                        alt="Profile" 
+                        className="h-9 w-9 rounded-full border-2 border-white shadow-sm object-cover hidden sm:block"
+                    />
+                ) : (
+                    <div className="h-9 w-9 rounded-full bg-blue-500 hidden sm:flex items-center justify-center text-white font-bold border-2 border-blue-400">
+                        {user.name.charAt(0).toUpperCase()}
+                    </div>
+                )}
+
+                <button 
+                    onClick={() => { logoutUser(); onLogout(); }}
+                    className="bg-blue-800 p-2 rounded-full text-white hover:bg-red-600 transition-colors border border-blue-600 hover:border-red-500 hidden sm:block"
+                    title="Cerrar Sesión"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                </button>
+
+                {/* Mobile Menu Button */}
+                <div className="-mr-2 flex md:hidden">
+                    <button
+                        onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                        type="button"
+                        className="bg-blue-800 inline-flex items-center justify-center p-2 rounded-md text-blue-200 hover:text-white hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-blue-800 focus:ring-white"
+                        aria-controls="mobile-menu"
+                        aria-expanded="false"
+                    >
+                        <span className="sr-only">Abrir menú principal</span>
+                        {!isMobileMenuOpen ? (
+                            <svg className="block h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                            </svg>
+                        ) : (
+                            <svg className="block h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        )}
+                    </button>
+                </div>
             </div>
-            <button 
-                onClick={() => { logoutUser(); onLogout(); }}
-                className="bg-blue-800 p-2 rounded-full text-white hover:bg-red-600 transition-colors border border-blue-600 hover:border-red-500"
-                title="Cerrar Sesión"
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-            </button>
           </div>
         </div>
       </div>
+
+      {/* Mobile Menu (Hamburger) */}
+      {isMobileMenuOpen && (
+          <div className="md:hidden bg-blue-800 border-t border-blue-600" id="mobile-menu">
+            <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                
+                {/* User Info in Menu (Mobile Only) */}
+                <div className="flex items-center px-3 py-3 border-b border-blue-700 mb-2">
+                    <div className="flex-shrink-0">
+                         {user.photoUrl ? (
+                            <img className="h-10 w-10 rounded-full border border-blue-300" src={user.photoUrl} alt="" />
+                         ) : (
+                            <div className="h-10 w-10 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold">
+                                {user.name.charAt(0).toUpperCase()}
+                            </div>
+                         )}
+                    </div>
+                    <div className="ml-3">
+                        <div className="text-base font-medium leading-none text-white">{user.name}</div>
+                        <div className="text-sm font-medium leading-none text-blue-300 mt-1">{user.role}</div>
+                    </div>
+                    <button 
+                        onClick={() => { logoutUser(); onLogout(); }}
+                        className="ml-auto bg-red-600 text-white text-xs px-2 py-1 rounded"
+                    >
+                        Salir
+                    </button>
+                </div>
+
+                {/* Navigation Links */}
+                {!isAdmin ? (
+                    // User Links
+                    <>
+                        <a onClick={() => handleMobileNavigate('dashboard')} className={mobileNavItemClass('dashboard')}>Reservas</a>
+                        <a onClick={() => handleMobileNavigate('checkin')} className={mobileNavItemClass('checkin')}>Control Acceso</a>
+                        <a onClick={() => handleMobileNavigate('ranking')} className={mobileNavItemClass('ranking')}>🏆 Ranking</a>
+                        <a onClick={() => handleMobileNavigate('suggestions')} className={mobileNavItemClass('suggestions')}>Sugerencias</a>
+                    </>
+                ) : (
+                    // Admin Links (Replicating Sidebar)
+                    <>
+                        <a onClick={() => handleMobileNavigate('dashboard')} className={mobileNavItemClass('dashboard')}>📅 Tablero Reservas</a>
+                        <a onClick={() => handleMobileNavigate('checkin')} className={mobileNavItemClass('checkin')}>⏱️ Control Acceso</a>
+                        <div className="border-t border-blue-700 my-2 pt-2 pb-1 px-3 text-xs text-blue-400 font-bold uppercase">Administración</div>
+                        <a onClick={() => handleMobileNavigate('ranking')} className={mobileNavItemClass('ranking')}>🏆 Ranking</a>
+                        <a onClick={() => handleMobileNavigate('admin_bookings')} className={mobileNavItemClass('admin_bookings')}>📝 Gestión Reservas</a>
+                        <a onClick={() => handleMobileNavigate('reports')} className={mobileNavItemClass('reports')}>📊 Reportes</a>
+                        <a onClick={() => handleMobileNavigate('users')} className={mobileNavItemClass('users')}>👥 Usuarios</a>
+                        <div className="border-t border-blue-700 my-2 pt-2 pb-1 px-3 text-xs text-blue-400 font-bold uppercase">Sistema</div>
+                        <a onClick={() => handleMobileNavigate('communications')} className={mobileNavItemClass('communications')}>📨 Mensajería</a>
+                        <a onClick={() => handleMobileNavigate('suggestions')} className={mobileNavItemClass('suggestions')}>🗳️ Buzón</a>
+                        <a onClick={() => handleMobileNavigate('system_logs')} className={mobileNavItemClass('system_logs')}>🗄️ Bitácora</a>
+                    </>
+                )}
+            </div>
+          </div>
+      )}
     </nav>
   );
 };

@@ -1,10 +1,14 @@
-import { Booking, AccessLog, User, UserRole, AppNotification } from '../types';
+
+import { Booking, AccessLog, User, UserRole, AppNotification, Suggestion } from '../types';
 import { DEMO_USERS, EXTERNAL_DB_CONFIG } from '../constants';
 import { supabase } from './supabaseClient';
 
 const KEYS = {
   USER: 'albrook_current_user',
 };
+
+// CONSTANTS
+const POOL_LENGTH_METERS = 50;
 
 // Utility to simulate network delay for local operations
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -77,7 +81,8 @@ const mapRowToLog = (row: any): AccessLog => ({
     id: row.id,
     bookingId: row.booking_id,
     checkInTime: row.check_in_time,
-    checkOutTime: row.check_out_time
+    checkOutTime: row.check_out_time,
+    laps: row.laps || 0
 });
 
 export const getLogs = async (): Promise<AccessLog[]> => {
@@ -96,16 +101,194 @@ export const getLogs = async (): Promise<AccessLog[]> => {
 
 export const saveLog = async (log: AccessLog): Promise<void> => {
   // Using upsert to handle both insert (new check-in) and update (check-out)
-  const { error } = await supabase
-    .from(EXTERNAL_DB_CONFIG.LOGS_TABLE)
-    .upsert({
+  const payload: any = {
         id: log.id,
         booking_id: log.bookingId,
         check_in_time: log.checkInTime,
         check_out_time: log.checkOutTime
-    });
+    };
+  
+  // Only add laps if it is defined, otherwise DB default (0) handles it
+  if (log.laps !== undefined) {
+      payload.laps = log.laps;
+  }
+
+  const { error } = await supabase
+    .from(EXTERNAL_DB_CONFIG.LOGS_TABLE)
+    .upsert(payload);
 
   if (error) throw new Error(error.message);
+};
+
+// --- RANKING & STATS UTILS ---
+
+export interface RankingItem {
+    userId: string;
+    userName: string;
+    totalLaps: number;
+    totalMeters: number;
+    totalTimeMinutes: number;
+    rank: number;
+}
+
+export interface PersonalStats {
+    weeklyLaps: number;
+    weeklyMeters: number;
+    weeklyTimeMinutes: number;
+    
+    monthlyLaps: number;
+    monthlyMeters: number;
+    monthlyTimeMinutes: number;
+    
+    yearlyLaps: number;
+    yearlyMeters: number;
+    yearlyTimeMinutes: number;
+    
+    bestDayLaps: number;
+    bestDayMeters: number;
+    bestDayDate: string;
+}
+
+export const getSwimmerStats = async (userId: string): Promise<PersonalStats> => {
+    try {
+        const [bookings, logs] = await Promise.all([getBookings(), getLogs()]);
+        
+        // Map logs to bookings to get dates and calc duration
+        const userLogs = logs.filter(l => l.laps && l.laps > 0).map(l => {
+            const booking = bookings.find(b => b.id === l.bookingId);
+            
+            // Calculate duration in minutes if both times exist
+            let duration = 0;
+            if (l.checkInTime && l.checkOutTime) {
+                const start = new Date(l.checkInTime).getTime();
+                const end = new Date(l.checkOutTime).getTime();
+                duration = Math.max(0, Math.round((end - start) / 60000));
+            }
+
+            return {
+                laps: l.laps || 0,
+                meters: (l.laps || 0) * POOL_LENGTH_METERS,
+                duration: duration,
+                date: booking ? new Date(booking.date) : new Date(0),
+                userId: booking?.userId
+            };
+        }).filter(item => item.userId === userId);
+
+        const now = new Date();
+        const startOfWeek = new Date(now);
+        startOfWeek.setDate(now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1)); // Monday
+        startOfWeek.setHours(0,0,0,0);
+
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+        // Accumulators
+        let weeklyLaps = 0; let weeklyMeters = 0; let weeklyTime = 0;
+        let monthlyLaps = 0; let monthlyMeters = 0; let monthlyTime = 0;
+        let yearlyLaps = 0; let yearlyMeters = 0; let yearlyTime = 0;
+        
+        // Calculate Totals
+        userLogs.forEach(entry => {
+            if (entry.date >= startOfWeek) {
+                weeklyLaps += entry.laps;
+                weeklyMeters += entry.meters;
+                weeklyTime += entry.duration;
+            }
+            if (entry.date >= startOfMonth) {
+                monthlyLaps += entry.laps;
+                monthlyMeters += entry.meters;
+                monthlyTime += entry.duration;
+            }
+            if (entry.date >= startOfYear) {
+                yearlyLaps += entry.laps;
+                yearlyMeters += entry.meters;
+                yearlyTime += entry.duration;
+            }
+        });
+
+        // Calculate Best Day
+        const lapsByDay: Record<string, number> = {};
+        userLogs.forEach(entry => {
+            const dateStr = entry.date.toISOString().split('T')[0];
+            lapsByDay[dateStr] = (lapsByDay[dateStr] || 0) + entry.laps;
+        });
+
+        let bestDayLaps = 0;
+        let bestDayDate = '-';
+
+        Object.entries(lapsByDay).forEach(([date, count]) => {
+            if (count > bestDayLaps) {
+                bestDayLaps = count;
+                bestDayDate = date;
+            }
+        });
+
+        return { 
+            weeklyLaps, weeklyMeters, weeklyTimeMinutes: weeklyTime,
+            monthlyLaps, monthlyMeters, monthlyTimeMinutes: monthlyTime,
+            yearlyLaps, yearlyMeters, yearlyTimeMinutes: yearlyTime,
+            bestDayLaps, bestDayMeters: bestDayLaps * POOL_LENGTH_METERS, bestDayDate 
+        };
+
+    } catch (e) {
+        console.error("Error calculating stats", e);
+        return { 
+            weeklyLaps: 0, weeklyMeters: 0, weeklyTimeMinutes: 0,
+            monthlyLaps: 0, monthlyMeters: 0, monthlyTimeMinutes: 0,
+            yearlyLaps: 0, yearlyMeters: 0, yearlyTimeMinutes: 0,
+            bestDayLaps: 0, bestDayMeters: 0, bestDayDate: '-' 
+        };
+    }
+};
+
+export const getLeaderboard = async (): Promise<RankingItem[]> => {
+    try {
+        const [bookings, logs] = await Promise.all([getBookings(), getLogs()]);
+        
+        // Aggregate by User
+        const userTotals: Record<string, { name: string, laps: number, time: number }> = {};
+
+        logs.forEach(l => {
+            if (l.laps && l.laps > 0) {
+                const booking = bookings.find(b => b.id === l.bookingId);
+                
+                let duration = 0;
+                if (l.checkInTime && l.checkOutTime) {
+                    const start = new Date(l.checkInTime).getTime();
+                    const end = new Date(l.checkOutTime).getTime();
+                    duration = Math.max(0, Math.round((end - start) / 60000));
+                }
+
+                if (booking && booking.userName) {
+                    if (!userTotals[booking.userId]) {
+                        userTotals[booking.userId] = { name: booking.userName, laps: 0, time: 0 };
+                    }
+                    userTotals[booking.userId].laps += l.laps;
+                    userTotals[booking.userId].time += duration;
+                }
+            }
+        });
+
+        // Convert to Array and Sort
+        const ranking = Object.entries(userTotals)
+            .map(([userId, data]) => ({
+                userId,
+                userName: data.name,
+                totalLaps: data.laps,
+                totalMeters: data.laps * POOL_LENGTH_METERS,
+                totalTimeMinutes: data.time,
+                rank: 0
+            }))
+            .sort((a, b) => b.totalLaps - a.totalLaps)
+            .slice(0, 10); // Top 10
+
+        // Assign Rank
+        return ranking.map((item, index) => ({ ...item, rank: index + 1 }));
+
+    } catch (e) {
+        console.error("Error generating leaderboard", e);
+        return [];
+    }
 };
 
 // --- USER MANAGEMENT (SUPABASE) ---
@@ -122,7 +305,8 @@ const mapRowToUser = (row: any): User => ({
     role: (row.category as UserRole) || (row.role as UserRole) || UserRole.INDIVIDUAL,
     email: row.email || '',
     phone: row.phone || '',
-    status: row.status || 'ACTIVO'
+    status: row.status || 'ACTIVO',
+    lastPaymentDate: row.last_payment_date || null
 });
 
 export const getAllUsers = async (): Promise<User[]> => {
@@ -139,6 +323,8 @@ export const getAllUsers = async (): Promise<User[]> => {
       const dbUsers = data.map(mapRowToUser);
 
       // 3. Merge with DEMO_USERS
+      // IMPORTANT: We only add demos if they DO NOT exist in DB (matching by username)
+      // This prioritizes the DB ID over the DEMO ID.
       const cleanDemos = DEMO_USERS.filter(d => !dbUsers.find(db => db.username === d.username));
       
       return [...cleanDemos, ...dbUsers];
@@ -150,10 +336,12 @@ export const getAllUsers = async (): Promise<User[]> => {
 
 export const registerUser = async (user: User): Promise<void> => {
   if (DEMO_USERS.find(u => u.username === user.username)) {
-      throw new Error("No se puede sobreescribir un usuario Demo del sistema.");
+      // Allow re-registering demo users to "sync" them to DB, but warn usually.
+      // For this app, we just proceed to insert into DB so they get a real ID.
   }
 
   // Insert mapping to specific table columns
+  // Note: last_payment_date is managed externally, so we do not insert it here.
   const { error } = await supabase
     .from(EXTERNAL_DB_CONFIG.SUBSCRIPTION_TABLE)
     .insert({
@@ -174,11 +362,13 @@ export const registerUser = async (user: User): Promise<void> => {
 };
 
 export const updateUser = async (updatedUser: User): Promise<void> => {
-  if (DEMO_USERS.find(u => u.id === updatedUser.id)) {
-      throw new Error("No se pueden editar los usuarios de demostración locales.");
+  // If it's a local demo user (id starts with 'u' and short), deny edit unless it's in DB
+  if (updatedUser.id.length < 5 && DEMO_USERS.find(u => u.id === updatedUser.id)) {
+      throw new Error("No se pueden editar los usuarios de demostración locales. Regístrelos en la BD primero.");
   }
 
   // Prepare payload dynamically
+  // Note: last_payment_date is removed from payload to avoid overwriting external data
   const updatePayload: any = {
     fullName: updatedUser.name,
     category: updatedUser.role,
@@ -201,7 +391,7 @@ export const updateUser = async (updatedUser: User): Promise<void> => {
 };
 
 export const deleteUser = async (userId: string): Promise<void> => {
-  if (DEMO_USERS.find(u => u.id === userId)) {
+  if (userId.length < 5 && DEMO_USERS.find(u => u.id === userId)) {
       throw new Error("No se pueden eliminar los usuarios de demostración locales.");
   }
 
@@ -214,6 +404,26 @@ export const deleteUser = async (userId: string): Promise<void> => {
 };
 
 export const loginUser = async (username: string): Promise<User | null> => {
+  // CRITICAL FIX: Check DB FIRST. 
+  // If the user exists in DB, we must use that record to ensure the ID matches what getAllUsers() sees.
+  try {
+      const { data, error } = await supabase
+        .from(EXTERNAL_DB_CONFIG.SUBSCRIPTION_TABLE)
+        .select('*')
+        .eq('username', username)
+        .maybeSingle(); // maybeSingle avoids error if 0 rows
+
+      if (data) {
+          const user = mapRowToUser(data);
+          localStorage.setItem(KEYS.USER, JSON.stringify(user));
+          return user;
+      }
+  } catch (err) {
+      console.error("Login DB check error:", err);
+      // Fallthrough to demo users if DB fails
+  }
+
+  // Fallback to Local Demo Users
   const demoUser = DEMO_USERS.find(u => u.username === username);
   if (demoUser) {
      const user = { ...demoUser, role: demoUser.role as UserRole };
@@ -221,22 +431,67 @@ export const loginUser = async (username: string): Promise<User | null> => {
      return user;
   }
 
-  try {
-      const { data, error } = await supabase
+  return null;
+};
+
+// --- SOCIAL LOGIN SYNC ---
+// Used when Supabase Auth returns a user, we need to map/create them in our internal 'members' table
+export const syncSocialUser = async (authUser: any): Promise<User> => {
+    const email = authUser.email;
+    const fullName = authUser.user_metadata?.full_name || authUser.user_metadata?.name || email.split('@')[0];
+    const avatarUrl = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture;
+
+    // 1. Check if exists in our table by email
+    const { data, error } = await supabase
         .from(EXTERNAL_DB_CONFIG.SUBSCRIPTION_TABLE)
         .select('*')
-        .eq('username', username)
-        .single();
+        .eq('email', email)
+        .maybeSingle();
+    
+    if (data) {
+        // User exists, return mapped user
+        const user = mapRowToUser(data);
+        // Inject avatar from social session (since we might not store it in internal DB)
+        if (avatarUrl) user.photoUrl = avatarUrl;
+        
+        localStorage.setItem(KEYS.USER, JSON.stringify(user));
+        return user;
+    }
 
-      if (error || !data) return null;
+    // 2. If not exists, create new INDIVIDUAL user
+    const newUser: User = {
+        id: `auto_${Date.now()}`, 
+        username: email, 
+        name: fullName,
+        role: UserRole.INDIVIDUAL,
+        password: '', 
+        email: email,
+        phone: '',
+        status: 'ACTIVO',
+        photoUrl: avatarUrl // Local property
+    };
 
-      const user = mapRowToUser(data);
-      localStorage.setItem(KEYS.USER, JSON.stringify(user));
-      return user;
-  } catch (err) {
-      console.error("Login Error:", err);
-      return null;
-  }
+    // We reuse registerUser, but need to catch "Username exists" error if email=username collision happens
+    try {
+        await registerUser(newUser);
+        
+        // Fetch again to get the generated ID
+        const { data: newData } = await supabase
+            .from(EXTERNAL_DB_CONFIG.SUBSCRIPTION_TABLE)
+            .select('*')
+            .eq('email', email)
+            .single();
+        
+        const createdUser = mapRowToUser(newData);
+        if (avatarUrl) createdUser.photoUrl = avatarUrl;
+        
+        localStorage.setItem(KEYS.USER, JSON.stringify(createdUser));
+        return createdUser;
+
+    } catch (e) {
+        console.error("Error syncing social user", e);
+        throw e;
+    }
 };
 
 export const getCurrentUser = (): User | null => {
@@ -244,8 +499,9 @@ export const getCurrentUser = (): User | null => {
   return data ? JSON.parse(data) : null;
 };
 
-export const logoutUser = () => {
+export const logoutUser = async () => {
   localStorage.removeItem(KEYS.USER);
+  await supabase.auth.signOut();
 };
 
 export interface AccountStatus {
@@ -301,11 +557,8 @@ export const getNotifications = async (userId: string): Promise<AppNotification[
         if (error) throw error;
         return data.map(mapRowToNotification);
     } catch (err: any) {
-        // Log warning only if table is likely missing (code 42P01 in Postgres is undefined_table, but Supabase JS error codes might vary)
         if (err.message && err.message.includes('does not exist')) {
-            console.warn(`[Supabase] La tabla '${EXTERNAL_DB_CONFIG.NOTIFICATIONS_TABLE}' no existe. Ejecute el script en db_schema.sql`);
-        } else {
-             console.error("Error fetching notifications:", err);
+            console.warn(`[Supabase] La tabla '${EXTERNAL_DB_CONFIG.NOTIFICATIONS_TABLE}' no existe.`);
         }
         return [];
     }
@@ -341,13 +594,14 @@ export const sendNotification = async (recipientId: string, title: string, messa
 
 export const broadcastNotification = async (title: string, message: string, targetRole?: UserRole): Promise<void> => {
     try {
-        // 1. Get recipients
         let users = await getAllUsers();
         if (targetRole) {
             users = users.filter(u => u.role === targetRole);
         }
+        
+        // Debug info
+        console.log(`Sending notification '${title}' to ${users.length} users...`);
 
-        // 2. Prepare Payload
         const payload = users.map(u => ({
             user_id: u.id,
             title,
@@ -355,16 +609,70 @@ export const broadcastNotification = async (title: string, message: string, targ
             type: 'INFO',
             is_read: false
         }));
-
         if (payload.length === 0) return;
-
-        // 3. Bulk Insert
-        await supabase
+        
+        const { error } = await supabase
             .from(EXTERNAL_DB_CONFIG.NOTIFICATIONS_TABLE)
             .insert(payload);
             
+        if (error) throw error;
     } catch (err) {
         console.error("Broadcast failed", err);
         throw err;
+    }
+};
+
+// --- SUGGESTIONS (BUZON) ---
+
+const mapRowToSuggestion = (row: any): Suggestion => ({
+    id: row.id,
+    userId: row.user_id,
+    userName: row.user_name || 'Anónimo',
+    date: row.created_at,
+    message: row.message,
+    isRead: row.is_read
+});
+
+export const getSuggestions = async (): Promise<Suggestion[]> => {
+    try {
+        const { data, error } = await supabase
+            .from(EXTERNAL_DB_CONFIG.SUGGESTIONS_TABLE)
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        return data.map(mapRowToSuggestion);
+    } catch (err: any) {
+        console.warn("Error obteniendo sugerencias (tabla podría no existir)", err.message);
+        return [];
+    }
+};
+
+export const saveSuggestion = async (userId: string, userName: string, message: string): Promise<void> => {
+    try {
+        const { error } = await supabase
+            .from(EXTERNAL_DB_CONFIG.SUGGESTIONS_TABLE)
+            .insert({
+                user_id: userId,
+                user_name: userName,
+                message: message,
+                is_read: false
+            });
+        
+        if (error) throw error;
+    } catch (err: any) {
+        console.error("Error guardando sugerencia:", err);
+        throw new Error("No se pudo enviar la sugerencia.");
+    }
+};
+
+export const markSuggestionRead = async (id: string, isRead: boolean): Promise<void> => {
+    try {
+        await supabase
+            .from(EXTERNAL_DB_CONFIG.SUGGESTIONS_TABLE)
+            .update({ is_read: isRead })
+            .eq('id', id);
+    } catch (err) {
+        console.error("Error marcando sugerencia", err);
     }
 };

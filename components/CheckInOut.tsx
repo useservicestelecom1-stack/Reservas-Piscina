@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Booking, AccessLog, User, UserRole } from '../types';
 import { getBookings, getLogs, saveLog } from '../services/storageService';
@@ -20,6 +21,8 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
     bookingId: string;
     userName: string;
   } | null>(null);
+
+  const [lapsInput, setLapsInput] = useState<number>(0);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
@@ -66,35 +69,112 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
     return logs.find(l => l.bookingId === bookingId);
   };
 
+  // --- Helper: Find Consecutive Block ---
+  const getConsecutiveBlock = async (targetBookingId: string): Promise<Booking[]> => {
+    // We need fresh data to ensure we catch all linked bookings
+    const allBookings = await getBookings();
+    const targetBooking = allBookings.find(b => b.id === targetBookingId);
+    
+    if (!targetBooking) return [];
+
+    // Filter bookings for the same user and date
+    const userDayBookings = allBookings.filter(b => 
+        b.userId === targetBooking.userId && 
+        b.date === targetBooking.date && 
+        b.status === 'CONFIRMED'
+    ).sort((a, b) => a.hour - b.hour);
+
+    // Find the index of the target
+    const index = userDayBookings.findIndex(b => b.id === targetBookingId);
+    if (index === -1) return [targetBooking];
+
+    const block: Booking[] = [userDayBookings[index]];
+
+    // Look backwards (hours before)
+    for (let i = index - 1; i >= 0; i--) {
+        if (userDayBookings[i].hour === userDayBookings[i + 1].hour - 1) {
+            block.unshift(userDayBookings[i]);
+        } else {
+            break; // Break chain if not consecutive
+        }
+    }
+
+    // Look forwards (hours after)
+    for (let i = index + 1; i < userDayBookings.length; i++) {
+        if (userDayBookings[i].hour === userDayBookings[i - 1].hour + 1) {
+            block.push(userDayBookings[i]);
+        } else {
+            break; // Break chain if not consecutive
+        }
+    }
+
+    return block;
+  };
+
   // --- Action Handlers (Logic only) ---
 
   const executeCheckIn = async (bookingId: string) => {
-    const existingLog = getLogForBooking(bookingId);
-    if (existingLog) return; 
+    setLoading(true);
+    try {
+        const block = await getConsecutiveBlock(bookingId);
+        const freshLogs = await getLogs(); // Get fresh logs to avoid duplicates
+        const checkInTime = new Date().toISOString();
 
-    // Generate specific ID for Supabase compatibility
-    const newLogId = crypto.randomUUID();
+        // Process all bookings in the consecutive block
+        const promises = block.map(booking => {
+            const existingLog = freshLogs.find(l => l.bookingId === booking.id);
+            if (existingLog) return Promise.resolve(); // Already checked in
 
-    const newLog: AccessLog = {
-      id: newLogId,
-      bookingId,
-      checkInTime: new Date().toISOString(),
-      checkOutTime: null
-    };
-    await saveLog(newLog);
-    refreshData();
+            const newLog: AccessLog = {
+                id: crypto.randomUUID(),
+                bookingId: booking.id,
+                checkInTime: checkInTime,
+                checkOutTime: null
+            };
+            return saveLog(newLog);
+        });
+
+        await Promise.all(promises);
+        await refreshData();
+    } catch (e) {
+        console.error("Error checking in block", e);
+    } finally {
+        setLoading(false);
+    }
   };
 
-  const executeCheckOut = async (bookingId: string) => {
-    const existingLog = getLogForBooking(bookingId);
-    if (!existingLog) return;
+  const executeCheckOut = async (bookingId: string, lapsInput: number) => {
+    setLoading(true);
+    try {
+        const block = await getConsecutiveBlock(bookingId);
+        const freshLogs = await getLogs();
+        const checkOutTime = new Date().toISOString();
 
-    const updatedLog: AccessLog = {
-      ...existingLog,
-      checkOutTime: new Date().toISOString()
-    };
-    await saveLog(updatedLog);
-    refreshData();
+        // Process all bookings in the consecutive block
+        const promises = block.map((booking, index) => {
+            const existingLog = freshLogs.find(l => l.bookingId === booking.id);
+            // Only checkout if checked in AND not already checked out
+            if (existingLog && !existingLog.checkOutTime) {
+                const updatedLog: AccessLog = {
+                    ...existingLog,
+                    checkOutTime: checkOutTime,
+                    // Assign total laps to the LAST booking in the block to avoid double counting per session
+                    // OR simple approach: just save it to the current ID triggered.
+                    // Better approach: Save it to the last block entry so stats count it once per session.
+                    laps: index === block.length - 1 ? lapsInput : 0 
+                };
+                return saveLog(updatedLog);
+            }
+            return Promise.resolve();
+        });
+
+        await Promise.all(promises);
+        await refreshData();
+    } catch (e) {
+        console.error("Error checking out block", e);
+    } finally {
+        setLoading(false);
+    }
   };
 
   // --- Interaction Handlers (UI triggers) ---
@@ -109,6 +189,7 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
   };
 
   const promptCheckOut = (bookingId: string, userName: string) => {
+      setLapsInput(0); // Reset input
       setConfirmDialog({
           isOpen: true,
           type: 'CHECK_OUT',
@@ -123,7 +204,7 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
       if (confirmDialog.type === 'CHECK_IN') {
           await executeCheckIn(confirmDialog.bookingId);
       } else {
-          await executeCheckOut(confirmDialog.bookingId);
+          await executeCheckOut(confirmDialog.bookingId, lapsInput);
       }
       setConfirmDialog(null);
   };
@@ -190,9 +271,12 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                                 {isCheckedOut ? (
-                                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                                        Finalizado
-                                    </span>
+                                    <div className="flex flex-col">
+                                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                                            Finalizado
+                                        </span>
+                                        {log?.laps ? <span className="text-[10px] text-gray-500 mt-1">{log.laps} vueltas</span> : null}
+                                    </div>
                                 ) : isCheckedIn ? (
                                     <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 animate-pulse">
                                         En Piscina
@@ -260,8 +344,27 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
                           {confirmDialog.type === 'CHECK_IN' ? 'Confirmar Entrada' : 'Confirmar Salida'}
                       </h3>
                       <p className="text-sm text-gray-500 mb-4">
-                          ¿Está seguro de que desea registrar la {confirmDialog.type === 'CHECK_IN' ? 'entrada' : 'salida'} de <strong>{confirmDialog.userName}</strong>?
+                          Esta acción afectará a <strong>todas las horas consecutivas</strong> de la reserva de <strong>{confirmDialog.userName}</strong>.
                       </p>
+
+                      {/* Laps Input (Only for Check-Out) */}
+                      {confirmDialog.type === 'CHECK_OUT' && (
+                          <div className="mb-4 text-left bg-blue-50 p-3 rounded-lg border border-blue-200">
+                              <label className="block text-sm font-bold text-gray-700 mb-1">
+                                  🏊 ¿Cuántas piscinas nadó hoy?
+                              </label>
+                              <input 
+                                  type="number" 
+                                  min="0"
+                                  value={lapsInput}
+                                  onChange={(e) => setLapsInput(Number(e.target.value))}
+                                  className="w-full border-gray-300 rounded-md shadow-sm p-2 text-center text-lg font-bold text-blue-800 focus:ring-blue-500"
+                              />
+                              <p className="text-xs text-blue-500 mt-1 text-center">
+                                  Su progreso será guardado en el Ranking.
+                              </p>
+                          </div>
+                      )}
                   </div>
                   <div className="flex justify-center gap-3 mt-4">
                       <Button variant="outline" onClick={handleCancelAction} className="w-full">
