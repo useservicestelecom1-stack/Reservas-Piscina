@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { Booking, AccessLog } from '../types';
 
@@ -30,11 +31,13 @@ export const generatePoolReport = async (bookings: Booking[], logs: AccessLog[],
   `;
 
   try {
+    // Fix: Updated model to 'gemini-3-flash-preview' for optimal text analysis performance
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
     });
     
+    // Fix: Extracting text output correctly from the property as per guidelines
     return response.text;
   } catch (error) {
     console.error("Error generating report with Gemini:", error);

@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect } from 'react';
-import { loginUser, syncSocialUser } from '../services/storageService';
+import { loginUser, syncSocialUser, registerUser } from '../services/storageService';
 import { supabase } from '../services/supabaseClient';
-import { User } from '../types';
+import { User, UserRole } from '../types';
 import { Button } from './Button';
 
 interface LoginProps {
@@ -9,54 +10,83 @@ interface LoginProps {
 }
 
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
+  const [isRegistering, setIsRegistering] = useState(false);
   const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [role, setRole] = useState<UserRole>(UserRole.INDIVIDUAL);
+  
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // Check for existing OAuth session on mount
   useEffect(() => {
     const checkSession = async () => {
         const { data: { session } } = await supabase.auth.getSession();
         if (session && session.user) {
             setLoading(true);
             try {
-                // Sync the Auth user to our database 'members' table
                 const appUser = await syncSocialUser(session.user);
                 onLogin(appUser);
             } catch (err: any) {
                 console.error("Sync error", err);
-                setError("Error sincronizando cuenta social.");
+                setError(err.message || "Error sincronizando cuenta social.");
                 setLoading(false);
             }
         }
     };
     checkSession();
-
-    // Listen for auth changes (e.g. after redirect)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-        if (session && session.user) {
-             // We do the same sync logic here
-             try {
-                const appUser = await syncSocialUser(session.user);
-                onLogin(appUser);
-            } catch (err) {
-                console.error("Auth state change error", err);
-            }
-        }
-    });
-
-    return () => subscription.unsubscribe();
   }, [onLogin]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    const user = await loginUser(username);
-    setLoading(false);
-    if (user) {
-      onLogin(user);
+    setError('');
+    
+    if (isRegistering) {
+        if (!username || !password || !name || !phone) {
+            setError("Todos los campos marcados con * son obligatorios.");
+            return;
+        }
+        setLoading(true);
+        try {
+            const newUser: User = {
+                id: crypto.randomUUID(),
+                username,
+                password,
+                name,
+                email,
+                phone,
+                role,
+                status: 'ACTIVO'
+            };
+            await registerUser(newUser);
+            // Auto login after registration
+            const user = await loginUser(username, password);
+            if (user) onLogin(user);
+        } catch (err: any) {
+            setError(err.message || "Error al registrar usuario.");
+        } finally {
+            setLoading(false);
+        }
     } else {
-      setError('Usuario no encontrado.');
+        if (!username || !password) {
+            setError("Por favor ingrese usuario y contraseña.");
+            return;
+        }
+        setLoading(true);
+        try {
+            const user = await loginUser(username, password);
+            if (user) {
+              onLogin(user);
+            } else {
+              setError('Credenciales incorrectas o usuario no encontrado.');
+            }
+        } catch (err) {
+            setError('Error al intentar iniciar sesión.');
+        } finally {
+            setLoading(false);
+        }
     }
   };
 
@@ -70,7 +100,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             }
         });
         if (error) throw error;
-        // User will be redirected, so loading state stays true until page reload/redirect
     } catch (err: any) {
         setLoading(false);
         setError(`Error iniciando sesión con ${provider}: ${err.message}`);
@@ -78,85 +107,133 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-blue-50">
+    <div className="min-h-screen flex items-center justify-center bg-blue-50 p-4">
       <div className="max-w-md w-full space-y-8 p-8 bg-white shadow-xl rounded-xl">
         <div className="text-center">
             <h1 className="text-4xl font-extrabold text-blue-600 mb-2">🏊</h1>
             <h2 className="text-3xl font-extrabold text-gray-900">Piscina Albrook</h2>
-            <p className="mt-2 text-sm text-gray-600">Sistema de Reservas y Control</p>
+            <p className="mt-2 text-sm text-gray-600">
+                {isRegistering ? 'Crear nueva cuenta de socio' : 'Gestión Administrativa de Socios'}
+            </p>
         </div>
         
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          <div className="rounded-md shadow-sm -space-y-px">
+        <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
+          <div className="rounded-md shadow-sm space-y-3">
+            {isRegistering && (
+                <>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase ml-1">Nombre Completo *</label>
+                        <input
+                            type="text"
+                            required
+                            className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            placeholder="Ej. Juan Pérez"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase ml-1">Teléfono *</label>
+                        <input
+                            type="tel"
+                            required
+                            className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            placeholder="6000-0000"
+                            value={phone}
+                            onChange={(e) => setPhone(e.target.value)}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase ml-1">Rol en el sistema</label>
+                        <select
+                            className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            value={role}
+                            onChange={(e) => setRole(e.target.value as UserRole)}
+                        >
+                            <option value={UserRole.ADMIN}>Administrador</option>
+                            <option value={UserRole.PRINCIPAL}>Socio Principal (Club)</option>
+                            <option value={UserRole.INDIVIDUAL}>Socio Individual</option>
+                        </select>
+                    </div>
+                </>
+            )}
+            
             <div>
-              <label htmlFor="username" className="sr-only">Usuario</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase ml-1">Usuario *</label>
               <input
                 id="username"
                 name="username"
                 type="text"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                 placeholder="Nombre de Usuario"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />
             </div>
             <div>
-              <label htmlFor="password" className="sr-only">Contraseña</label>
+              <label className="block text-xs font-bold text-gray-500 uppercase ml-1">Contraseña *</label>
               <input
-                id="password"
+                id="passwordField"
                 name="password"
                 type="password"
                 required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
                 placeholder="Contraseña"
-                defaultValue="123" 
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
               />
             </div>
           </div>
 
-          {error && <div className="text-red-500 text-sm text-center">{error}</div>}
+          {!isRegistering && (
+             <div className="bg-blue-50 border border-blue-200 rounded p-2 text-[11px] text-blue-700">
+                <p className="font-bold">🔑 Acceso Admin Maestro:</p>
+                <p>Usuario: <span className="font-mono">admin</span> | Clave: <span className="font-mono">admin123</span></p>
+             </div>
+          )}
 
-          <div>
+          {error && <div className="text-red-500 text-sm text-center font-bold bg-red-50 p-2 rounded border border-red-100">{error}</div>}
+
+          <div className="space-y-3">
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Ingresando...' : 'Ingresar'}
+              {loading ? 'Procesando...' : (isRegistering ? 'Crear Cuenta' : 'Entrar al Sistema')}
             </Button>
+            
+            <button 
+                type="button"
+                onClick={() => { setIsRegistering(!isRegistering); setError(''); }}
+                className="w-full text-center text-sm text-blue-600 hover:underline font-medium"
+            >
+                {isRegistering ? '¿Ya tienes cuenta? Inicia Sesión' : '¿Eres nuevo? Regístrate aquí'}
+            </button>
           </div>
         </form>
 
-        <div className="mt-6">
-            <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-300"></div>
-                </div>
-                <div className="relative flex justify-center text-sm">
-                    <span className="px-2 bg-white text-gray-500">O ingresa con redes sociales</span>
+        {!isRegistering && (
+            <div className="mt-6 border-t pt-6">
+                <p className="text-center text-xs text-gray-500 mb-4 uppercase tracking-widest font-bold">Acceso Social</p>
+                <div className="grid grid-cols-2 gap-3">
+                    <button
+                        onClick={() => handleSocialLogin('facebook')}
+                        disabled={loading}
+                        className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                    >
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/5/51/Facebook_f_logo_%282019%29.svg" alt="FB" className="h-5 w-5 mr-2" />
+                        <span>Facebook</span>
+                    </button>
+
+                    <button
+                        onClick={() => handleSocialLogin('google')}
+                        disabled={loading}
+                        className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
+                    >
+                        <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" className="h-5 w-5 mr-2" />
+                        <span>Google</span>
+                    </button>
                 </div>
             </div>
-
-            <div className="mt-6 grid grid-cols-2 gap-3">
-                <button
-                    onClick={() => handleSocialLogin('facebook')}
-                    disabled={loading}
-                    className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-                >
-                    <img src="https://upload.wikimedia.org/wikipedia/commons/5/51/Facebook_f_logo_%282019%29.svg" alt="FB" className="h-5 w-5 mr-2" />
-                    <span>Facebook</span>
-                </button>
-
-                <button
-                    onClick={() => handleSocialLogin('google')}
-                    disabled={loading}
-                    className="w-full inline-flex justify-center py-2 px-4 border border-gray-300 rounded-md shadow-sm bg-white text-sm font-medium text-gray-500 hover:bg-gray-50"
-                >
-                    <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" className="h-5 w-5 mr-2" />
-                    <span>Google</span>
-                </button>
-            </div>
-            <p className="text-[10px] text-center text-gray-400 mt-2">
-                Nota: Requiere configuración de Providers en Supabase Dashboard.
-            </p>
-        </div>
+        )}
       </div>
     </div>
   );

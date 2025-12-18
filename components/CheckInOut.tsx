@@ -13,13 +13,14 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
   const [logs, setLogs] = useState<AccessLog[]>([]);
   const [now, setNow] = useState(new Date());
   const [loading, setLoading] = useState(false);
+  const [showQR, setShowQR] = useState<string | null>(null);
 
-  // Confirmation Modal State
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
     type: 'CHECK_IN' | 'CHECK_OUT';
     bookingId: string;
     userName: string;
+    lanes?: string;
   } | null>(null);
 
   const [lapsInput, setLapsInput] = useState<number>(0);
@@ -33,7 +34,6 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
     refreshData();
   }, []);
 
-  // Use the same date generation logic as BookingCalendar to ensure matches
   const getLocalTodayDate = () => {
     const d = new Date();
     const year = d.getFullYear();
@@ -46,20 +46,16 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
     setLoading(true);
     const allBookings = await getBookings();
     const allLogs = await getLogs();
-    
-    // Filter for Today using robust string matching
     const localToday = getLocalTodayDate();
     
     let relevantBookings = allBookings
       .filter(b => b.date === localToday && b.status === 'CONFIRMED');
 
-    // If NOT admin, only show my own bookings
     if (user.role !== UserRole.ADMIN) {
         relevantBookings = relevantBookings.filter(b => b.userId === user.id);
     }
 
     const sorted = relevantBookings.sort((a, b) => a.hour - b.hour);
-
     setTodayBookings(sorted);
     setLogs(allLogs);
     setLoading(false);
@@ -69,148 +65,44 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
     return logs.find(l => l.bookingId === bookingId);
   };
 
-  // --- Helper: Find Consecutive Block ---
-  const getConsecutiveBlock = async (targetBookingId: string): Promise<Booking[]> => {
-    // We need fresh data to ensure we catch all linked bookings
-    const allBookings = await getBookings();
-    const targetBooking = allBookings.find(b => b.id === targetBookingId);
-    
-    if (!targetBooking) return [];
-
-    // Filter bookings for the same user and date
-    const userDayBookings = allBookings.filter(b => 
-        b.userId === targetBooking.userId && 
-        b.date === targetBooking.date && 
-        b.status === 'CONFIRMED'
-    ).sort((a, b) => a.hour - b.hour);
-
-    // Find the index of the target
-    const index = userDayBookings.findIndex(b => b.id === targetBookingId);
-    if (index === -1) return [targetBooking];
-
-    const block: Booking[] = [userDayBookings[index]];
-
-    // Look backwards (hours before)
-    for (let i = index - 1; i >= 0; i--) {
-        if (userDayBookings[i].hour === userDayBookings[i + 1].hour - 1) {
-            block.unshift(userDayBookings[i]);
-        } else {
-            break; // Break chain if not consecutive
-        }
-    }
-
-    // Look forwards (hours after)
-    for (let i = index + 1; i < userDayBookings.length; i++) {
-        if (userDayBookings[i].hour === userDayBookings[i - 1].hour + 1) {
-            block.push(userDayBookings[i]);
-        } else {
-            break; // Break chain if not consecutive
-        }
-    }
-
-    return block;
-  };
-
-  // --- Action Handlers (Logic only) ---
-
   const executeCheckIn = async (bookingId: string) => {
     setLoading(true);
     try {
-        const block = await getConsecutiveBlock(bookingId);
-        const freshLogs = await getLogs(); // Get fresh logs to avoid duplicates
         const checkInTime = new Date().toISOString();
-
-        // Process all bookings in the consecutive block
-        const promises = block.map(booking => {
-            const existingLog = freshLogs.find(l => l.bookingId === booking.id);
-            if (existingLog) return Promise.resolve(); // Already checked in
-
-            const newLog: AccessLog = {
-                id: crypto.randomUUID(),
-                bookingId: booking.id,
-                checkInTime: checkInTime,
-                checkOutTime: null
-            };
-            return saveLog(newLog);
-        });
-
-        await Promise.all(promises);
+        const newLog: AccessLog = {
+            id: crypto.randomUUID(),
+            bookingId: bookingId,
+            checkInTime: checkInTime,
+            checkOutTime: null
+        };
+        await saveLog(newLog);
         await refreshData();
-    } catch (e) {
-        console.error("Error checking in block", e);
-    } finally {
-        setLoading(false);
-    }
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
   const executeCheckOut = async (bookingId: string, lapsInput: number) => {
     setLoading(true);
     try {
-        const block = await getConsecutiveBlock(bookingId);
-        const freshLogs = await getLogs();
         const checkOutTime = new Date().toISOString();
-
-        // Process all bookings in the consecutive block
-        const promises = block.map((booking, index) => {
-            const existingLog = freshLogs.find(l => l.bookingId === booking.id);
-            // Only checkout if checked in AND not already checked out
-            if (existingLog && !existingLog.checkOutTime) {
-                const updatedLog: AccessLog = {
-                    ...existingLog,
-                    checkOutTime: checkOutTime,
-                    // Assign total laps to the LAST booking in the block to avoid double counting per session
-                    // OR simple approach: just save it to the current ID triggered.
-                    // Better approach: Save it to the last block entry so stats count it once per session.
-                    laps: index === block.length - 1 ? lapsInput : 0 
-                };
-                return saveLog(updatedLog);
-            }
-            return Promise.resolve();
-        });
-
-        await Promise.all(promises);
+        const existingLog = logs.find(l => l.bookingId === bookingId);
+        if (existingLog) {
+            await saveLog({
+                ...existingLog,
+                checkOutTime: checkOutTime,
+                laps: lapsInput
+            });
+        }
         await refreshData();
-    } catch (e) {
-        console.error("Error checking out block", e);
-    } finally {
-        setLoading(false);
-    }
+    } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
-  // --- Interaction Handlers (UI triggers) ---
-
-  const promptCheckIn = (bookingId: string, userName: string) => {
-      setConfirmDialog({
-          isOpen: true,
-          type: 'CHECK_IN',
-          bookingId,
-          userName
-      });
+  const promptCheckIn = (bookingId: string, userName: string, lanes?: string) => {
+      setConfirmDialog({ isOpen: true, type: 'CHECK_IN', bookingId, userName, lanes });
   };
 
   const promptCheckOut = (bookingId: string, userName: string) => {
-      setLapsInput(0); // Reset input
-      setConfirmDialog({
-          isOpen: true,
-          type: 'CHECK_OUT',
-          bookingId,
-          userName
-      });
-  };
-
-  const handleConfirmAction = async () => {
-      if (!confirmDialog) return;
-
-      if (confirmDialog.type === 'CHECK_IN') {
-          await executeCheckIn(confirmDialog.bookingId);
-      } else {
-          await executeCheckOut(confirmDialog.bookingId, lapsInput);
-      }
-      setConfirmDialog(null);
-  };
-
-  const handleCancelAction = () => {
-      setConfirmDialog(null);
+      setLapsInput(0);
+      setConfirmDialog({ isOpen: true, type: 'CHECK_OUT', bookingId, userName });
   };
 
   return (
@@ -218,13 +110,9 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
       <div className="flex justify-between items-center mb-6">
         <div>
             <h2 className="text-2xl font-bold text-gray-800">⏱️ Control de Acceso</h2>
-            <p className="text-sm text-gray-500">
-                {user.role === UserRole.ADMIN ? 'Vista de Administrador (Todos los usuarios)' : 'Reporte su entrada y salida'}
-            </p>
+            <p className="text-sm text-gray-500">Gestión de llegada y carriles</p>
         </div>
-        <div className="text-lg font-mono text-blue-600 bg-blue-50 px-3 py-1 rounded">
-            {now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-        </div>
+        <div className="text-lg font-mono text-blue-600 bg-blue-50 px-3 py-1 rounded">{now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
       </div>
 
       <div className="overflow-x-auto">
@@ -232,151 +120,84 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
           <thead className="bg-gray-50">
             <tr>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hora</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Detalle</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Personas</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuario / Carriles</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Código / Pax</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {loading ? (
-                <tr><td colSpan={5} className="px-6 py-4 text-center">Cargando datos...</td></tr>
-            ) : todayBookings.length === 0 ? (
-                <tr>
-                    <td colSpan={5} className="px-6 py-4 text-center text-gray-500">
-                        {user.role === UserRole.ADMIN ? 'No hay reservas para hoy.' : 'No tienes reservas activas para hoy.'}
-                    </td>
-                </tr>
-            ) : (
-                todayBookings.map((booking) => {
-                    const log = getLogForBooking(booking.id);
-                    const isCheckedIn = !!log?.checkInTime;
-                    const isCheckedOut = !!log?.checkOutTime;
-                    
-                    const currentHour = now.getHours();
-                    const isCurrentHour = currentHour === booking.hour;
-                    const isPast = currentHour > booking.hour;
-                    
-                    return (
-                        <tr key={booking.id} className={isCurrentHour ? 'bg-blue-50' : ''}>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                {booking.hour}:00
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <div className="font-medium text-gray-900">{booking.userName}</div>
-                                {user.role === UserRole.ADMIN && <div className="text-xs text-gray-400">{booking.userRole}</div>}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                {booking.headCount}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                                {isCheckedOut ? (
-                                    <div className="flex flex-col">
-                                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                                            Finalizado
-                                        </span>
-                                        {log?.laps ? <span className="text-[10px] text-gray-500 mt-1">{log.laps} vueltas</span> : null}
-                                    </div>
-                                ) : isCheckedIn ? (
-                                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800 animate-pulse">
-                                        En Piscina
-                                    </span>
-                                ) : isCurrentHour ? (
-                                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 font-bold">
-                                        Check-In Abierto
-                                    </span>
-                                ) : isPast ? (
-                                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">
-                                        Retrasado
-                                    </span>
-                                ) : (
-                                    <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                                        Pendiente
-                                    </span>
-                                )}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                {!isCheckedIn && (
-                                    <Button 
-                                        size="sm" 
-                                        onClick={() => promptCheckIn(booking.id, booking.userName)}
-                                        // Allow check-in if it is current hour or past hour (late arrival), but not future
-                                        disabled={currentHour < booking.hour}
-                                        className={currentHour < booking.hour ? 'opacity-50 cursor-not-allowed' : ''}
-                                    >
-                                        Marcar Entrada
-                                    </Button>
-                                )}
-                                {isCheckedIn && !isCheckedOut && (
-                                    <Button variant="danger" size="sm" onClick={() => promptCheckOut(booking.id, booking.userName)}>
-                                        Marcar Salida
-                                    </Button>
-                                )}
-                                {isCheckedOut && (
-                                    <span className="text-gray-400 text-xs">
-                                        Salida: {new Date(log!.checkOutTime!).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}
-                                    </span>
-                                )}
-                            </td>
-                        </tr>
-                    );
-                })
-            )}
+            {todayBookings.map((booking) => {
+                const log = getLogForBooking(booking.id);
+                const isCheckedIn = !!log?.checkInTime;
+                const isCheckedOut = !!log?.checkOutTime;
+                const currentHour = now.getHours();
+                const isCurrentHour = currentHour === booking.hour;
+                return (
+                    <tr key={booking.id} className={isCurrentHour ? 'bg-blue-50' : ''}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{booking.hour}:00</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-xs font-bold">{booking.userName.charAt(0)}</div>
+                                <div>
+                                    <div className="font-bold text-gray-900">{booking.userName}</div>
+                                    <span className="text-[10px] px-1 py-0.5 rounded bg-blue-100 text-blue-700 font-bold uppercase">Carriles: {booking.laneNumbers}</span>
+                                </div>
+                            </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => setShowQR(booking.bookingCode || null)} className="p-1 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg></button>
+                                <div><div className="text-xs font-mono text-gray-400">{booking.bookingCode?.split('-').pop()}</div><div className="font-bold text-gray-700">{booking.headCount} pax</div></div>
+                            </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            {isCheckedOut ? 'Finalizado' : isCheckedIn ? 'En Piscina' : 'Pendiente'}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right">
+                            {!isCheckedIn && <Button size="sm" onClick={() => promptCheckIn(booking.id, booking.userName, booking.laneNumbers)}>Entrada</Button>}
+                            {isCheckedIn && !isCheckedOut && <Button variant="danger" size="sm" onClick={() => promptCheckOut(booking.id, booking.userName)}>Salida</Button>}
+                        </td>
+                    </tr>
+                );
+            })}
           </tbody>
         </table>
       </div>
 
-      {/* Confirmation Modal */}
+      {showQR && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black bg-opacity-70" onClick={() => setShowQR(null)}>
+              <div className="bg-white p-6 rounded-2xl flex flex-col items-center shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
+                  <p className="font-bold text-gray-800 mb-4 uppercase text-sm tracking-widest">Código de Acceso</p>
+                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${showQR}`} className="w-56 h-56 mb-4 shadow-sm border border-gray-100" alt="QR Access" />
+                  <p className="font-mono text-blue-600 font-bold">{showQR}</p>
+                  <Button variant="outline" size="sm" className="mt-6 w-full" onClick={() => setShowQR(null)}>Cerrar</Button>
+              </div>
+          </div>
+      )}
+
       {confirmDialog && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900 bg-opacity-50">
               <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6 animate-fade-in-up">
                   <div className="text-center">
-                      <div className={`mx-auto flex items-center justify-center h-12 w-12 rounded-full mb-4 ${
-                          confirmDialog.type === 'CHECK_IN' ? 'bg-green-100' : 'bg-red-100'
-                      }`}>
-                          {confirmDialog.type === 'CHECK_IN' ? (
-                              <svg className="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path></svg>
-                          ) : (
-                              <svg className="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
-                          )}
-                      </div>
-                      <h3 className="text-lg leading-6 font-medium text-gray-900 mb-2">
-                          {confirmDialog.type === 'CHECK_IN' ? 'Confirmar Entrada' : 'Confirmar Salida'}
-                      </h3>
-                      <p className="text-sm text-gray-500 mb-4">
-                          Esta acción afectará a <strong>todas las horas consecutivas</strong> de la reserva de <strong>{confirmDialog.userName}</strong>.
-                      </p>
-
-                      {/* Laps Input (Only for Check-Out) */}
+                      <h3 className="text-lg font-bold text-gray-900 mb-2">{confirmDialog.type === 'CHECK_IN' ? 'Confirmar Entrada' : 'Confirmar Salida'}</h3>
+                      {confirmDialog.type === 'CHECK_IN' && (
+                          <div className="my-4 py-2 bg-blue-50 border border-blue-200 rounded text-blue-800">
+                             <p className="text-xs uppercase font-bold">CARRILES ASIGNADOS</p>
+                             <p className="text-2xl font-black">{confirmDialog.lanes}</p>
+                          </div>
+                      )}
+                      <p className="text-sm text-gray-500 mb-4">Registro para <strong>{confirmDialog.userName}</strong>.</p>
                       {confirmDialog.type === 'CHECK_OUT' && (
                           <div className="mb-4 text-left bg-blue-50 p-3 rounded-lg border border-blue-200">
-                              <label className="block text-sm font-bold text-gray-700 mb-1">
-                                  🏊 ¿Cuántas piscinas nadó hoy?
-                              </label>
-                              <input 
-                                  type="number" 
-                                  min="0"
-                                  value={lapsInput}
-                                  onChange={(e) => setLapsInput(Number(e.target.value))}
-                                  className="w-full border-gray-300 rounded-md shadow-sm p-2 text-center text-lg font-bold text-blue-800 focus:ring-blue-500"
-                              />
-                              <p className="text-xs text-blue-500 mt-1 text-center">
-                                  Su progreso será guardado en el Ranking.
-                              </p>
+                              <label className="block text-sm font-bold text-gray-700 mb-1">🏊 Piscinas nadadas</label>
+                              <input type="number" min="0" value={lapsInput} onChange={(e) => setLapsInput(Number(e.target.value))} className="w-full border-gray-300 rounded-md p-2 text-center text-lg font-bold text-blue-800" />
                           </div>
                       )}
                   </div>
-                  <div className="flex justify-center gap-3 mt-4">
-                      <Button variant="outline" onClick={handleCancelAction} className="w-full">
-                          Cancelar
-                      </Button>
-                      <Button 
-                        variant={confirmDialog.type === 'CHECK_IN' ? 'primary' : 'danger'} 
-                        onClick={handleConfirmAction} 
-                        className="w-full"
-                      >
-                          Confirmar
-                      </Button>
+                  <div className="flex justify-center gap-3">
+                      <Button variant="outline" onClick={() => setConfirmDialog(null)} className="w-full">Cancelar</Button>
+                      <Button variant={confirmDialog.type === 'CHECK_IN' ? 'primary' : 'danger'} onClick={() => { if(confirmDialog.type === 'CHECK_IN') executeCheckIn(confirmDialog.bookingId); else executeCheckOut(confirmDialog.bookingId, lapsInput); setConfirmDialog(null); }} className="w-full">Confirmar</Button>
                   </div>
               </div>
           </div>
