@@ -11,12 +11,12 @@ export interface User {
   username: string;
   name: string;
   role: UserRole;
-  password?: string; // In a real app, hashed.
+  password?: string;
   email?: string;
   phone?: string;
-  status?: string; // Added to match DB 'status' column
-  photoUrl?: string; // URL de foto de perfil (Google/Facebook)
-  lastPaymentDate?: string; // YYYY-MM-DD Fecha del último pago registrado
+  status?: string;
+  photoUrl?: string;
+  lastPaymentDate?: string;
 }
 
 export interface Booking {
@@ -24,39 +24,35 @@ export interface Booking {
   userId: string;
   userName: string;
   userRole: UserRole;
-  date: string; // YYYY-MM-DD
-  hour: number; // 0-23
-  headCount: number; // Number of people in this group
+  userPhotoUrl?: string;
+  date: string;
+  hour: number;
+  headCount: number;
   status: 'CONFIRMED' | 'CANCELLED';
+  laneNumbers?: string; // Updated: Now supports multiple lanes as string (e.g. "1, 2")
+  bookingCode?: string;
 }
 
 export interface AccessLog {
   id: string;
   bookingId: string;
-  checkInTime: string | null; // ISO Timestamp
-  checkOutTime: string | null; // ISO Timestamp
-  laps?: number; // Cantidad de piscinas nadadas en la sesión
+  checkInTime: string | null;
+  checkOutTime: string | null;
+  laps?: number;
 }
 
 export interface Suggestion {
   id: string;
   userId: string;
   userName: string;
-  date: string; // ISO Timestamp
+  date: string;
   message: string;
   isRead: boolean;
 }
 
-export interface DailyStats {
-  date: string;
-  totalVisitors: number;
-  peakHour: number;
-  peakCount: number;
-}
-
 export interface AppNotification {
   id: string;
-  userId: string; // The recipient ID
+  userId: string;
   title: string;
   message: string;
   isRead: boolean;
