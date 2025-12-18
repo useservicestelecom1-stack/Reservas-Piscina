@@ -69,7 +69,8 @@ const mapRowToBooking = (row: any): Booking => ({
     hour: row.hour,
     headCount: row.head_count,
     status: row.status as 'CONFIRMED' | 'CANCELLED',
-    laneNumbers: row.lane_numbers || row.lane_number?.toString(),
+    // Mapeo flexible para leer de ambas versiones si existen
+    laneNumbers: row.lane_number?.toString() || row.lane_numbers?.toString() || '',
     bookingCode: row.booking_code
 });
 
@@ -87,6 +88,25 @@ export const getBookings = async (): Promise<Booking[]> => {
 };
 
 export const saveBooking = async (booking: Booking): Promise<void> => {
+  // 1. Asegurar que el usuario existe en la tabla 'members' para evitar errores de Foreign Key
+  const { data: userExists } = await supabase
+    .from(EXTERNAL_DB_CONFIG.SUBSCRIPTION_TABLE)
+    .select('id')
+    .eq('id', booking.userId)
+    .maybeSingle();
+
+  if (!userExists) {
+    // Si es el admin maestro o un usuario social no sincronizado, creamos un perfil mínimo
+    await supabase.from(EXTERNAL_DB_CONFIG.SUBSCRIPTION_TABLE).insert({
+      id: booking.userId,
+      name: booking.userName,
+      username: booking.userId,
+      role: booking.userRole,
+      status: 'ACTIVO'
+    });
+  }
+
+  // 2. Intentar guardar la reserva usando 'lane_number' (singular)
   const { error } = await supabase
     .from(EXTERNAL_DB_CONFIG.BOOKINGS_TABLE)
     .insert({
@@ -99,10 +119,14 @@ export const saveBooking = async (booking: Booking): Promise<void> => {
         hour: booking.hour,
         head_count: booking.headCount,
         status: booking.status,
-        lane_numbers: booking.laneNumbers,
+        lane_number: booking.laneNumbers, // Corregido a singular
         booking_code: booking.bookingCode
     });
-  if (error) throw new Error(error.message);
+    
+  if (error) {
+    console.error("Supabase Save Error:", error);
+    throw new Error(error.message);
+  }
 };
 
 export const updateBookingStatus = async (id: string, status: 'CONFIRMED' | 'CANCELLED'): Promise<void> => {
@@ -212,7 +236,6 @@ export const deleteUser = async (id: string) => {
 
 export const loginUser = async (username: string, password?: string): Promise<User | null> => {
   try {
-    // MASTER ADMIN CHECK
     if (username === 'admin' && password === 'admin123') {
         const masterAdmin: User = {
             id: 'master-admin-001',

@@ -106,7 +106,6 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ user }) => {
         }
     }
 
-    // MULTI-LANE LOGIC
     const currentPax = getCapacityForHour(selectedDate, selectedHour);
     const startLane = Math.floor(currentPax / 6) + 1;
     const endLane = Math.floor((currentPax + headCount - 1) / 6) + 1;
@@ -170,14 +169,14 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ user }) => {
         setError(null);
         setSelectedHour(null);
         setDuration(1);
-    } catch (err) {
-        setError("Error al guardar la reserva.");
+    } catch (err: any) {
+        console.error("Save error:", err);
+        setError(`Error técnico al guardar: ${err.message || "Error desconocido en base de datos"}`);
     } finally {
         setLoading(false);
     }
   };
 
-  // Remaining render logic updated to use success.lanes and b.laneNumbers
   const renderSlots = () => {
     if (!selectedDate) return null;
     if (loading && bookings.length === 0) return <div className="p-4">Cargando disponibilidad...</div>;
@@ -272,7 +271,13 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ user }) => {
             </div>
 
             <div className="mb-6">{renderSlots()}</div>
-            {error && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md">⚠️ {error}</div>}
+            {error && (
+              <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-700 rounded-md">
+                <p className="font-bold flex items-center gap-2">⚠️ Error al procesar:</p>
+                <p className="text-sm mt-1">{error}</p>
+                <p className="text-[10px] mt-2 text-red-400">Si el error persiste, contacte a soporte técnico con este mensaje.</p>
+              </div>
+            )}
             {success && (
                 <div className="mb-6 p-6 bg-green-50 rounded-xl border-2 border-green-200 flex flex-col items-center animate-fade-in">
                     <div className="flex items-center gap-3 mb-4">
