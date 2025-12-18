@@ -14,6 +14,8 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
   const [now, setNow] = useState(new Date());
   const [loading, setLoading] = useState(false);
   const [showQR, setShowQR] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [confirmDialog, setConfirmDialog] = useState<{
     isOpen: boolean;
@@ -44,21 +46,26 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
 
   const refreshData = async () => {
     setLoading(true);
-    const allBookings = await getBookings();
-    const allLogs = await getLogs();
-    const localToday = getLocalTodayDate();
-    
-    let relevantBookings = allBookings
-      .filter(b => b.date === localToday && b.status === 'CONFIRMED');
+    try {
+        const allBookings = await getBookings();
+        const allLogs = await getLogs();
+        const localToday = getLocalTodayDate();
+        
+        let relevantBookings = allBookings
+          .filter(b => b.date === localToday && b.status === 'CONFIRMED');
 
-    if (user.role !== UserRole.ADMIN) {
-        relevantBookings = relevantBookings.filter(b => b.userId === user.id);
+        if (user.role !== UserRole.ADMIN) {
+            relevantBookings = relevantBookings.filter(b => b.userId === user.id);
+        }
+
+        const sorted = relevantBookings.sort((a, b) => a.hour - b.hour);
+        setTodayBookings(sorted);
+        setLogs(allLogs);
+    } catch (err) {
+        console.error("Refresh error", err);
+    } finally {
+        setLoading(false);
     }
-
-    const sorted = relevantBookings.sort((a, b) => a.hour - b.hour);
-    setTodayBookings(sorted);
-    setLogs(allLogs);
-    setLoading(false);
   };
 
   const getLogForBooking = (bookingId: string) => {
@@ -67,6 +74,7 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
 
   const executeCheckIn = async (bookingId: string) => {
     setLoading(true);
+    setError(null);
     try {
         const checkInTime = new Date().toISOString();
         const newLog: AccessLog = {
@@ -76,12 +84,21 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
             checkOutTime: null
         };
         await saveLog(newLog);
+        setConfirmDialog(null);
+        setSuccessMessage("¡Entrada registrada! Disfruta tu nado. 🏊‍♂️");
+        setTimeout(() => setSuccessMessage(null), 3000);
         await refreshData();
-    } catch (e) { console.error(e); } finally { setLoading(false); }
+    } catch (e: any) { 
+        console.error(e); 
+        setError(`Fallo al registrar entrada: ${e.message}`);
+    } finally { 
+        setLoading(false); 
+    }
   };
 
   const executeCheckOut = async (bookingId: string, lapsInput: number) => {
     setLoading(true);
+    setError(null);
     try {
         const checkOutTime = new Date().toISOString();
         const existingLog = logs.find(l => l.bookingId === bookingId);
@@ -92,15 +109,25 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
                 laps: lapsInput
             });
         }
+        setConfirmDialog(null);
+        setSuccessMessage(`¡Salida registrada! Has nadado ${lapsInput} piscinas (${lapsInput * 50}m). Tu ranking se ha actualizado. 🏆`);
+        setTimeout(() => setSuccessMessage(null), 5000);
         await refreshData();
-    } catch (e) { console.error(e); } finally { setLoading(false); }
+    } catch (e: any) { 
+        console.error(e); 
+        setError(`Fallo al registrar salida: ${e.message}`);
+    } finally { 
+        setLoading(false); 
+    }
   };
 
   const promptCheckIn = (bookingId: string, userName: string, lanes?: string) => {
+      setError(null);
       setConfirmDialog({ isOpen: true, type: 'CHECK_IN', bookingId, userName, lanes });
   };
 
   const promptCheckOut = (bookingId: string, userName: string) => {
+      setError(null);
       setLapsInput(0);
       setConfirmDialog({ isOpen: true, type: 'CHECK_OUT', bookingId, userName });
   };
@@ -115,6 +142,19 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
         <div className="text-lg font-mono text-blue-600 bg-blue-50 px-3 py-1 rounded">{now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
       </div>
 
+      {error && (
+          <div className="mb-4 p-3 bg-red-100 border border-red-200 text-red-700 text-sm rounded animate-pulse">
+              {error}
+          </div>
+      )}
+
+      {successMessage && (
+          <div className="mb-4 p-4 bg-green-100 border border-green-200 text-green-800 text-sm rounded font-bold flex items-center gap-2 animate-bounce">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+              {successMessage}
+          </div>
+      )}
+
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -127,7 +167,9 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {todayBookings.map((booking) => {
+            {todayBookings.length === 0 ? (
+                <tr><td colSpan={5} className="p-10 text-center text-gray-400">No hay reservas para hoy.</td></tr>
+            ) : todayBookings.map((booking) => {
                 const log = getLogForBooking(booking.id);
                 const isCheckedIn = !!log?.checkInTime;
                 const isCheckedOut = !!log?.checkOutTime;
@@ -152,7 +194,9 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
                             </div>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
-                            {isCheckedOut ? 'Finalizado' : isCheckedIn ? 'En Piscina' : 'Pendiente'}
+                            <span className={`px-2 py-1 rounded-full text-[10px] font-bold ${isCheckedOut ? 'bg-gray-100 text-gray-500' : isCheckedIn ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                {isCheckedOut ? 'Finalizado' : isCheckedIn ? 'En Piscina' : 'Pendiente'}
+                            </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right">
                             {!isCheckedIn && <Button size="sm" onClick={() => promptCheckIn(booking.id, booking.userName, booking.laneNumbers)}>Entrada</Button>}
@@ -167,7 +211,7 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
 
       {showQR && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black bg-opacity-70" onClick={() => setShowQR(null)}>
-              <div className="bg-white p-6 rounded-2xl flex flex-col items-center shadow-2xl animate-scale-in" onClick={e => e.stopPropagation()}>
+              <div className="bg-white p-6 rounded-2xl flex flex-col items-center shadow-2xl" onClick={e => e.stopPropagation()}>
                   <p className="font-bold text-gray-800 mb-4 uppercase text-sm tracking-widest">Código de Acceso</p>
                   <img src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${showQR}`} className="w-56 h-56 mb-4 shadow-sm border border-gray-100" alt="QR Access" />
                   <p className="font-mono text-blue-600 font-bold">{showQR}</p>
@@ -178,7 +222,7 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
 
       {confirmDialog && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900 bg-opacity-50">
-              <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6 animate-fade-in-up">
+              <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-6">
                   <div className="text-center">
                       <h3 className="text-lg font-bold text-gray-900 mb-2">{confirmDialog.type === 'CHECK_IN' ? 'Confirmar Entrada' : 'Confirmar Salida'}</h3>
                       {confirmDialog.type === 'CHECK_IN' && (
@@ -196,8 +240,10 @@ export const CheckInOut: React.FC<CheckInOutProps> = ({ user }) => {
                       )}
                   </div>
                   <div className="flex justify-center gap-3">
-                      <Button variant="outline" onClick={() => setConfirmDialog(null)} className="w-full">Cancelar</Button>
-                      <Button variant={confirmDialog.type === 'CHECK_IN' ? 'primary' : 'danger'} onClick={() => { if(confirmDialog.type === 'CHECK_IN') executeCheckIn(confirmDialog.bookingId); else executeCheckOut(confirmDialog.bookingId, lapsInput); setConfirmDialog(null); }} className="w-full">Confirmar</Button>
+                      <Button variant="outline" onClick={() => setConfirmDialog(null)} className="w-full" disabled={loading}>Cancelar</Button>
+                      <Button variant={confirmDialog.type === 'CHECK_IN' ? 'primary' : 'danger'} onClick={() => { if(confirmDialog.type === 'CHECK_IN') executeCheckIn(confirmDialog.bookingId); else executeCheckOut(confirmDialog.bookingId, lapsInput); }} className="w-full" disabled={loading}>
+                          {loading ? '...' : 'Confirmar'}
+                      </Button>
                   </div>
               </div>
           </div>

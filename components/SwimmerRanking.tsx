@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User } from '../types';
 import { getSwimmerStats, getLeaderboard, PersonalStats, RankingItem } from '../services/storageService';
+import { Button } from './Button';
 
 interface Props {
     user: User;
@@ -56,17 +57,21 @@ export const SwimmerRanking: React.FC<Props> = ({ user }) => {
     return (
         <div className="space-y-8 animate-fade-in-up">
             
-            {/* Header */}
-            <div className="bg-gradient-to-r from-cyan-600 to-blue-700 p-6 rounded-lg shadow-lg text-white mb-6">
-                <h1 className="text-3xl font-extrabold flex items-center gap-3">
-                    🏊‍♂️ Ranking de Nadadores
-                </h1>
-                <p className="text-blue-100 opacity-90 mt-2">
-                    Visualiza tu progreso y compite amistosamente por el top de la piscina. (Largo: 50m)
-                </p>
+            <div className="bg-gradient-to-r from-cyan-600 to-blue-700 p-6 rounded-lg shadow-lg text-white mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div>
+                    <h1 className="text-3xl font-extrabold flex items-center gap-3">
+                        🏊‍♂️ Ranking de Nadadores
+                    </h1>
+                    <p className="text-blue-100 opacity-90 mt-2">
+                        Visualiza tu progreso y compite amistosamente por el top de la piscina. (Largo: 50m)
+                    </p>
+                </div>
+                <Button variant="secondary" onClick={loadData} disabled={loading}>
+                    {loading ? 'Actualizando...' : '🔄 Refrescar'}
+                </Button>
             </div>
 
-            {loading ? (
+            {loading && !stats ? (
                 <div className="text-center py-12">
                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
                     <p className="text-gray-500">Calculando brazadas...</p>
@@ -74,13 +79,11 @@ export const SwimmerRanking: React.FC<Props> = ({ user }) => {
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     
-                    {/* Personal Stats Column */}
                     <div className="lg:col-span-1 space-y-4">
                         <h2 className="text-xl font-bold text-gray-800 border-l-4 border-blue-500 pl-3">
                             Mis Estadísticas
                         </h2>
                         
-                        {/* Weekly */}
                         <div className="bg-white rounded-lg shadow p-5 border border-blue-100 hover:shadow-md transition-shadow">
                             <h3 className="text-xs uppercase font-bold text-gray-500 mb-1">Esta Semana</h3>
                             <div className="flex justify-between items-end">
@@ -101,7 +104,6 @@ export const SwimmerRanking: React.FC<Props> = ({ user }) => {
                             </div>
                         </div>
 
-                        {/* Monthly */}
                         <div className="bg-white rounded-lg shadow p-5 border border-blue-100 hover:shadow-md transition-shadow">
                             <h3 className="text-xs uppercase font-bold text-gray-500 mb-1">Este Mes</h3>
                             <div className="flex justify-between items-end">
@@ -122,7 +124,6 @@ export const SwimmerRanking: React.FC<Props> = ({ user }) => {
                             </div>
                         </div>
 
-                        {/* Yearly */}
                         <div className="bg-white rounded-lg shadow p-5 border border-blue-100 hover:shadow-md transition-shadow">
                             <h3 className="text-xs uppercase font-bold text-gray-500 mb-1">Año Actual</h3>
                             <div className="flex justify-between items-end">
@@ -159,7 +160,6 @@ export const SwimmerRanking: React.FC<Props> = ({ user }) => {
                         </div>
                     </div>
 
-                    {/* Leaderboard Column */}
                     <div className="lg:col-span-2">
                          <h2 className="text-xl font-bold text-gray-800 border-l-4 border-yellow-400 pl-3 mb-4">
                             Top 10 Nadadores (Histórico)
