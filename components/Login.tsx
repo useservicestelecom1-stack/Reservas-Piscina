@@ -200,13 +200,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           </div>
 
           {!isRegistering && (
-           //  <div className="bg-blue-50 border border-blue-200 rounded p-2 text-[11px] text-blue-700">
-              //  <p className="font-bold">🔑 Acceso Administrativo:</p>
-              //  <p>Usuario: <span className="font-mono">admin</span> | Clave: <span className="font-mono">admin123</span></p>
-          //   </div>
-         //)}
+             <div className="bg-blue-50 border border-blue-200 rounded p-2 text-[11px] text-blue-700">
+                <p className="font-bold">🔑 Acceso Administrativo:</p>
+                <p>Usuario: <span className="font-mono">admin</span> | Clave: <span className="font-mono">admin123</span></p>
+             </div>
+         )}
 
-          //{error && <div className="text-red-500 text-sm text-center font-bold bg-red-50 p-2 rounded border border-red-100">{error}</div>}
+          {error && <div className="text-red-500 text-sm text-center font-bold bg-red-50 p-2 rounded border border-red-100">{error}</div>}
 
           <div className="space-y-3">
             <Button type="submit" className="w-full" disabled={loading}>
