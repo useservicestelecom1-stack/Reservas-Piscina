@@ -29,7 +29,7 @@ export interface Booking {
   hour: number;
   headCount: number;
   status: 'CONFIRMED' | 'CANCELLED';
-  laneNumbers?: string; // Updated: Now supports multiple lanes as string (e.g. "1, 2")
+  laneNumbers?: string; 
   bookingCode?: string;
 }
 
