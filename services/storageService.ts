@@ -7,6 +7,31 @@ const KEYS = {
   USER: 'albrook_current_user',
 };
 
+/**
+ * Mapea el rol interno de la App al valor esperado por el ENUM de la DB (MemberCategory).
+ * Si "individual" e "INDIVIDUAL" fallaron, es muy probable que sea "Individual" (Capitalizado)
+ */
+const toDBCategory = (role: UserRole): string => {
+  switch (role) {
+    case UserRole.ADMIN: return 'Administrador';
+    case UserRole.PRINCIPAL: return 'Principal';
+    case UserRole.DEPENDENT: return 'Dependiente';
+    case UserRole.INDIVIDUAL: return 'Individual';
+    default: return 'Individual';
+  }
+};
+
+/**
+ * Convierte cualquier valor de la DB al rol interno de la App de forma segura.
+ */
+const fromDBCategory = (dbValue: string): UserRole => {
+  const val = (dbValue || '').toUpperCase();
+  if (val.includes('ADMIN')) return UserRole.ADMIN;
+  if (val.includes('PRINCIPAL')) return UserRole.PRINCIPAL;
+  if (val.includes('DEPENDENT') || val.includes('DEPENDIENTE')) return UserRole.DEPENDENT;
+  return UserRole.INDIVIDUAL;
+};
+
 export interface AccountStatus {
   exists: boolean;
   data?: any;
@@ -38,16 +63,11 @@ export interface RankingItem {
 }
 
 const mapRowToUser = (row: any): User => {
-  const rawRole = (row.role || row.category || '').toUpperCase();
-  let finalRole = UserRole.INDIVIDUAL;
-  if (Object.values(UserRole).includes(rawRole as UserRole)) {
-    finalRole = rawRole as UserRole;
-  }
   return {
     id: row.id?.toString() || '',
     name: row.fullName || row.name || row.username || 'Usuario',
     username: row.username,
-    role: finalRole,
+    role: fromDBCategory(row.category),
     password: row.password,
     email: row.email,
     phone: row.phone,
@@ -61,7 +81,7 @@ const mapRowToBooking = (row: any): Booking => ({
     id: row.id,
     userId: row.user_id,
     userName: row.user_name,
-    userRole: (row.user_role?.toUpperCase() as UserRole) || UserRole.INDIVIDUAL,
+    userRole: fromDBCategory(row.user_role),
     userPhotoUrl: row.user_photo_url,
     date: row.date,
     hour: row.hour,
@@ -86,7 +106,11 @@ export const saveBooking = async (booking: Booking): Promise<void> => {
   const { data: userExists } = await supabase.from(EXTERNAL_DB_CONFIG.SUBSCRIPTION_TABLE).select('id').eq('id', booking.userId).maybeSingle();
   if (!userExists) {
     await supabase.from(EXTERNAL_DB_CONFIG.SUBSCRIPTION_TABLE).insert({
-      id: booking.userId, name: booking.userName, username: booking.userId, role: booking.userRole, status: 'ACTIVO'
+      id: booking.userId, 
+      fullName: booking.userName,
+      username: booking.userId, 
+      category: toDBCategory(booking.userRole),
+      status: 'ACTIVO'
     });
   }
   const { error } = await supabase.from(EXTERNAL_DB_CONFIG.BOOKINGS_TABLE).insert({
@@ -116,7 +140,7 @@ export const getLogs = async (): Promise<AccessLog[]> => {
           bookingId: row.booking_id,
           checkInTime: row.check_in_time,
           checkOutTime: row.check_out_time,
-          laps: parseInt(row.laps || 0) // Forzar entero
+          laps: parseInt(row.laps || 0)
       }));
   } catch (err) {
       console.error("Error fetching logs:", err);
@@ -130,7 +154,7 @@ export const saveLog = async (log: AccessLog): Promise<void> => {
         booking_id: log.bookingId,
         check_in_time: log.checkInTime,
         check_out_time: log.checkOutTime,
-        laps: parseInt(log.laps?.toString() || '0') // Asegurar envío como número
+        laps: parseInt(log.laps?.toString() || '0')
     };
   const { error } = await supabase.from(EXTERNAL_DB_CONFIG.LOGS_TABLE).upsert(payload);
   if (error) throw new Error(error.message);
@@ -226,15 +250,33 @@ export const getAllUsers = async (): Promise<User[]> => {
 
 export const registerUser = async (user: User) => {
   const { error } = await supabase.from(EXTERNAL_DB_CONFIG.SUBSCRIPTION_TABLE).insert({
-      id: user.id, name: user.name, username: user.username, password: user.password, role: user.role, email: user.email, phone: user.phone, status: user.status
+      id: user.id, 
+      fullName: user.name, 
+      username: user.username, 
+      password: user.password, 
+      category: toDBCategory(user.role),
+      email: user.email, 
+      phone: user.phone, 
+      status: user.status
     });
   if (error) throw error;
 };
 
 export const updateUser = async (user: User) => {
-  const payload: any = { name: user.name, role: user.role, email: user.email, phone: user.phone, status: user.status };
+  const payload: any = { 
+    fullName: user.name, 
+    username: user.username, // CRITICAL: Asegurar que el username se persista
+    category: toDBCategory(user.role),
+    email: user.email, 
+    phone: user.phone, 
+    status: user.status 
+  };
   if (user.password) payload.password = user.password;
-  const { error } = await supabase.from(EXTERNAL_DB_CONFIG.SUBSCRIPTION_TABLE).update(payload).eq('id', user.id);
+  
+  const { error } = await supabase.from(EXTERNAL_DB_CONFIG.SUBSCRIPTION_TABLE)
+    .update(payload)
+    .eq('id', user.id);
+    
   if (error) throw error;
 };
 

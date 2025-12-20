@@ -44,7 +44,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError('');
     
     if (isRegistering) {
-        if (!username || !password || !name || !phone) {
+        if (!email || !password || !name || !phone) {
             setError("Todos los campos marcados con * son obligatorios.");
             return;
         }
@@ -52,17 +52,17 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         try {
             const newUser: User = {
                 id: crypto.randomUUID(),
-                username,
+                username: email, // Por defecto en auto-registro el email es el username
                 password,
                 name,
                 email,
                 phone,
                 role,
-                status: 'ACTIVO'
+               // status: 'ACTIVO'
             };
             await registerUser(newUser);
             // Auto login after registration
-            const user = await loginUser(username, password);
+            const user = await loginUser(email, password);
             if (user) onLogin(user);
         } catch (err: any) {
             setError(err.message || "Error al registrar usuario.");
@@ -71,7 +71,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         }
     } else {
         if (!username || !password) {
-            setError("Por favor ingrese usuario y contraseña.");
+            setError("Por favor ingrese su usuario/correo y contraseña.");
             return;
         }
         setLoading(true);
@@ -80,7 +80,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             if (user) {
               onLogin(user);
             } else {
-              setError('Credenciales incorrectas o usuario no encontrado.');
+              setError('Credenciales incorrectas o socio no encontrado.');
             }
         } catch (err) {
             setError('Error al intentar iniciar sesión.');
@@ -133,7 +133,18 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                         />
                     </div>
                     <div>
-                        <label className="block text-xs font-bold text-gray-500 uppercase ml-1">Teléfono *</label>
+                        <label className="block text-xs font-bold text-gray-500 uppercase ml-1">Correo Electrónico *</label>
+                        <input
+                            type="email"
+                            required
+                            className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                            placeholder="correo@ejemplo.com"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase ml-1">Teléfono WhatsApp *</label>
                         <input
                             type="tel"
                             required
@@ -150,27 +161,29 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                             value={role}
                             onChange={(e) => setRole(e.target.value as UserRole)}
                         >
-                            <option value={UserRole.ADMIN}>Administrador</option>
-                            <option value={UserRole.PRINCIPAL}>Socio Principal (Club)</option>
                             <option value={UserRole.INDIVIDUAL}>Socio Individual</option>
+                            <option value={UserRole.PRINCIPAL}>Socio Principal (Club)</option>
                         </select>
                     </div>
                 </>
             )}
             
-            <div>
-              <label className="block text-xs font-bold text-gray-500 uppercase ml-1">Usuario *</label>
-              <input
-                id="username"
-                name="username"
-                type="text"
-                required
-                className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                placeholder="Nombre de Usuario"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            </div>
+            {!isRegistering && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase ml-1">Correo o Usuario *</label>
+                  <input
+                    id="username"
+                    name="username"
+                    type="text"
+                    required
+                    className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    placeholder="Ej. socio@ejemplo.com"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                  />
+                </div>
+            )}
+
             <div>
               <label className="block text-xs font-bold text-gray-500 uppercase ml-1">Contraseña *</label>
               <input
@@ -179,7 +192,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 type="password"
                 required
                 className="appearance-none rounded-md relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                placeholder="Contraseña"
+                placeholder="Su clave de acceso"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
@@ -187,13 +200,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           </div>
 
           {!isRegistering && (
-             <div className="bg-blue-50 border border-blue-200 rounded p-2 text-[11px] text-blue-700">
-                <p className="font-bold">🔑 Acceso Admin Maestro:</p>
-                <p>Usuario: <span className="font-mono">admin</span> | Clave: <span className="font-mono">admin123</span></p>
-             </div>
-          )}
+           //  <div className="bg-blue-50 border border-blue-200 rounded p-2 text-[11px] text-blue-700">
+              //  <p className="font-bold">🔑 Acceso Administrativo:</p>
+              //  <p>Usuario: <span className="font-mono">admin</span> | Clave: <span className="font-mono">admin123</span></p>
+          //   </div>
+         //)}
 
-          {error && <div className="text-red-500 text-sm text-center font-bold bg-red-50 p-2 rounded border border-red-100">{error}</div>}
+          //{error && <div className="text-red-500 text-sm text-center font-bold bg-red-50 p-2 rounded border border-red-100">{error}</div>}
 
           <div className="space-y-3">
             <Button type="submit" className="w-full" disabled={loading}>

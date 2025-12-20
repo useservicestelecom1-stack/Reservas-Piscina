@@ -204,8 +204,8 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ user }) => {
 
       if (isAdmin) {
           slots.push(
-            <div key={h} onClick={() => setViewingHour(h)} className={`relative p-3 rounded-lg border-2 cursor-pointer transition-all flex flex-col items-center justify-center h-24 ${isPastHour ? 'bg-gray-100 border-gray-200' : 'bg-green-50 border-green-200'} ${isExclusive ? 'ring-1 ring-blue-400' : ''}`}>
-                {isExclusive && <span className="absolute top-1 left-1 bg-blue-600 text-white text-[9px] px-1 rounded font-bold uppercase">Club</span>}
+            <div key={h} onClick={() => setViewingHour(h)} className={`relative p-3 rounded-lg border-2 cursor-pointer transition-all flex flex-col items-center justify-center h-24 ${isPastHour ? 'bg-gray-100 border-gray-200' : 'bg-green-50 border-green-200'} ${isExclusive ? 'ring-2 ring-amber-500 border-amber-300' : ''}`}>
+                {isExclusive && <span className="absolute top-1 left-1 bg-amber-600 text-white text-[9px] px-1.5 rounded font-black uppercase shadow-sm">CLUB</span>}
                 <span className="text-lg font-bold">{h}:00</span>
                 <div className="text-xs font-semibold mt-1">{occupancy} / {POOL_CONFIG.MAX_CAPACITY_PER_HOUR}</div>
                 <span className="text-[10px] text-gray-500 mt-1 uppercase">Detalle</span>
@@ -215,14 +215,34 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ user }) => {
           const isSelected = selectedHour === h;
           const isInRange = selectedHour !== null && h > selectedHour && h < selectedHour + duration;
           slots.push(
-            <div key={h} onClick={() => !isDisabled && !loading && setSelectedHour(h)} className={`relative p-3 rounded-lg border cursor-pointer transition-all min-h-[90px] flex flex-col justify-between ${isSelected ? 'border-blue-600 ring-2 ring-blue-200 bg-blue-100' : ''} ${isInRange ? 'bg-blue-50 border-blue-300' : ''} ${isDisabled ? 'opacity-50 cursor-not-allowed bg-gray-100' : 'bg-white'}`}>
+            <div key={h} onClick={() => !isDisabled && !loading && setSelectedHour(h)} className={`relative p-3 rounded-lg border cursor-pointer transition-all min-h-[90px] flex flex-col justify-between ${isSelected ? 'border-blue-600 ring-2 ring-blue-200 bg-blue-100' : ''} ${isInRange ? 'bg-blue-50 border-blue-300' : ''} ${isDisabled ? 'bg-gray-50 opacity-80' : 'bg-white hover:border-blue-300 shadow-sm'} ${isRestrictedForMe ? 'border-amber-200' : ''}`}>
               <div className="flex justify-between items-center mb-1">
                 <span className={`font-bold ${isPastHour ? 'text-gray-400' : 'text-gray-700'}`}>{h}:00</span>
-                <span className="text-xs font-mono">{occupancy}/{POOL_CONFIG.MAX_CAPACITY_PER_HOUR}</span>
+                {isRestrictedForMe ? (
+                  <span className="text-[9px] bg-amber-500 text-white px-2 py-0.5 rounded shadow-sm font-black uppercase flex items-center gap-1 border border-amber-600 tracking-tighter">
+                    <span className="text-xs">🔒</span> CLUB
+                  </span>
+                ) : (
+                  <span className="text-xs font-mono font-bold text-gray-600">{occupancy}/{POOL_CONFIG.MAX_CAPACITY_PER_HOUR}</span>
+                )}
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
-                <div className={`h-2 rounded-full transition-all duration-500 ${percentFull > 80 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${percentFull}%` }}></div>
-              </div>
+              
+              {!isRestrictedForMe && !isPastHour ? (
+                <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                  <div className={`h-2 rounded-full transition-all duration-500 ${percentFull > 80 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${percentFull}%` }}></div>
+                </div>
+              ) : isRestrictedForMe ? (
+                <div className="text-[10px] text-amber-700 font-bold leading-tight mt-1 flex items-start gap-1">
+                  <span className="shrink-0">⚠️</span>
+                  <span>Exclusivo para entrenamiento de Clubs.</span>
+                </div>
+              ) : (
+                <div className="text-[10px] text-gray-400 font-medium italic mt-1">Horario pasado.</div>
+              )}
+
+              {isRestrictedForMe && (
+                <div className="absolute inset-0 bg-amber-50 bg-opacity-5 pointer-events-none rounded-lg"></div>
+              )}
             </div>
           );
       }
@@ -325,7 +345,7 @@ export const BookingCalendar: React.FC<BookingCalendarProps> = ({ user }) => {
 
       {viewingHour !== null && isAdmin && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900 bg-opacity-50">
-              <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-0 overflow-hidden">
+              <div className="bg-white rounded-lg shadow-xl max-md w-full p-0 overflow-hidden">
                   <div className="bg-blue-700 text-white p-4 flex justify-between items-center">
                       <div><h3 className="text-lg font-bold">Detalle Ocupación</h3><p className="text-xs">{selectedDate} | {viewingHour}:00</p></div>
                       <button onClick={() => setViewingHour(null)}>✕</button>
