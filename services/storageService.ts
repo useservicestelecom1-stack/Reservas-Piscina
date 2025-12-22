@@ -9,7 +9,6 @@ const KEYS = {
 
 /**
  * Mapea el rol interno de la App al valor esperado por el ENUM de la DB (MemberCategory).
- * Si "individual" e "INDIVIDUAL" fallaron, es muy probable que sea "Individual" (Capitalizado)
  */
 const toDBCategory = (role: UserRole): string => {
   switch (role) {
@@ -95,9 +94,9 @@ export const getBookings = async (): Promise<Booking[]> => {
   try {
       const { data, error } = await supabase.from(EXTERNAL_DB_CONFIG.BOOKINGS_TABLE).select('*');
       if (error) throw error;
-      return data.map(mapRowToBooking);
-  } catch (err) {
-      console.error("Error fetching bookings:", err);
+      return data ? data.map(mapRowToBooking) : [];
+  } catch (err: any) {
+      console.error("Error fetching bookings:", err.message || err);
       return [];
   }
 };
@@ -135,15 +134,15 @@ export const getLogs = async (): Promise<AccessLog[]> => {
   try {
       const { data, error } = await supabase.from(EXTERNAL_DB_CONFIG.LOGS_TABLE).select('*');
       if (error) throw error;
-      return data.map((row: any) => ({
+      return data ? data.map((row: any) => ({
           id: row.id,
           bookingId: row.booking_id,
           checkInTime: row.check_in_time,
           checkOutTime: row.check_out_time,
           laps: parseInt(row.laps || 0)
-      }));
-  } catch (err) {
-      console.error("Error fetching logs:", err);
+      })) : [];
+  } catch (err: any) {
+      console.error("Error fetching logs:", err.message || err);
       return [];
   }
 };
@@ -245,7 +244,7 @@ export const getLeaderboard = async (): Promise<RankingItem[]> => {
 export const getAllUsers = async (): Promise<User[]> => {
   const { data, error } = await supabase.from(EXTERNAL_DB_CONFIG.SUBSCRIPTION_TABLE).select('*');
   if (error) return [];
-  return data.map(mapRowToUser);
+  return data ? data.map(mapRowToUser) : [];
 };
 
 export const registerUser = async (user: User) => {
@@ -259,13 +258,13 @@ export const registerUser = async (user: User) => {
       phone: user.phone, 
       status: user.status
     });
-  if (error) throw error;
+  if (error) throw new Error(error.message);
 };
 
 export const updateUser = async (user: User) => {
   const payload: any = { 
     fullName: user.name, 
-    username: user.username, // CRITICAL: Asegurar que el username se persista
+    username: user.username, 
     category: toDBCategory(user.role),
     email: user.email, 
     phone: user.phone, 
@@ -277,12 +276,12 @@ export const updateUser = async (user: User) => {
     .update(payload)
     .eq('id', user.id);
     
-  if (error) throw error;
+  if (error) throw new Error(error.message);
 };
 
 export const deleteUser = async (id: string) => {
   const { error } = await supabase.from(EXTERNAL_DB_CONFIG.SUBSCRIPTION_TABLE).delete().eq('id', id);
-  if (error) throw error;
+  if (error) throw new Error(error.message);
 };
 
 export const loginUser = async (username: string, password?: string): Promise<User | null> => {
@@ -299,7 +298,7 @@ export const loginUser = async (username: string, password?: string): Promise<Us
       localStorage.setItem(KEYS.USER, JSON.stringify(user));
       return user;
     }
-  } catch (err) { console.error(err); }
+  } catch (err: any) { console.error(err.message || err); }
   return null;
 };
 
@@ -333,6 +332,45 @@ export const getNotifications = async (userId: string) => [];
 export const markNotificationAsRead = async (id: string) => {};
 export const sendNotification = async (recipientId: string, title: string, message: string) => {};
 export const broadcastNotification = async (title: string, message: string, role?: UserRole) => {};
-export const getSuggestions = async () => [];
-export const saveSuggestion = async (userId: string, userName: string, message: string) => {};
-export const markSuggestionRead = async (id: string, isRead: boolean) => {};
+
+// Sugerencias Persistidas con uso de created_at estándar de Supabase
+export const getSuggestions = async (): Promise<Suggestion[]> => {
+  try {
+    const { data, error } = await supabase
+      .from(EXTERNAL_DB_CONFIG.SUGGESTIONS_TABLE)
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    
+    return data ? data.map(s => ({
+      id: s.id,
+      userId: s.user_id,
+      userName: s.user_name,
+      date: s.created_at || s.date,
+      message: s.message,
+      isRead: s.is_read
+    })) : [];
+  } catch (err: any) {
+    console.error("Error fetching suggestions:", err.message || err);
+    return [];
+  }
+};
+
+export const saveSuggestion = async (userId: string, userName: string, message: string) => {
+  const { error } = await supabase.from(EXTERNAL_DB_CONFIG.SUGGESTIONS_TABLE).insert({
+    id: crypto.randomUUID(),
+    user_id: userId,
+    user_name: userName,
+    message: message,
+    is_read: false
+  });
+  if (error) throw new Error(error.message);
+};
+
+export const markSuggestionRead = async (id: string, isRead: boolean) => {
+  const { error } = await supabase.from(EXTERNAL_DB_CONFIG.SUGGESTIONS_TABLE)
+    .update({ is_read: isRead })
+    .eq('id', id);
+  if (error) throw new Error(error.message);
+};
