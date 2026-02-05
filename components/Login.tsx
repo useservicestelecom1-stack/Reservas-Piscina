@@ -202,7 +202,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           {!isRegistering && (
              <div className="bg-blue-50 border border-blue-200 rounded p-2 text-[11px] text-blue-700">
                 <p className="font-bold">🔑 Acceso Administrativo:</p>
-                <p>Usuario: <span className="font-mono">admin</span> | Clave: <span className="font-mono">admin123</span></p>
+                <p>Usuario: <span className="font-mono">admin</span> | Clave: <span className="font-mono">admin***</span></p>
              </div>
          )}
 
